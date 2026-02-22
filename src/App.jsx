@@ -9,7 +9,7 @@ import {
 import LoginScreen from './LoginScreen';
 import OrdersScreen from './OrdersScreen';
 import ProfileScreen from './ProfileScreen';
-import { uploadProductPhotos } from './supabase';
+import { deleteProductPhotoByUrl, uploadProductPhotos } from './supabase';
 
 const NUMBER_FIELDS = ['price', 'weight', 'calories', 'proteins', 'fats', 'carbohydrates'];
 const SCREEN_MENU = 'menu';
@@ -128,6 +128,15 @@ function mergePhotoFiles(existingFiles, incomingFiles) {
   });
 
   return Array.from(map.values());
+}
+
+function removeFirstPhotoMatch(photos, targetUrl) {
+  const photoIndex = photos.indexOf(targetUrl);
+  if (photoIndex < 0) {
+    return photos;
+  }
+
+  return photos.filter((_, index) => index !== photoIndex);
 }
 
 function isAdminUser(user) {
@@ -367,21 +376,51 @@ function App() {
     });
   }
 
-  function handleDeletePhoto(photoIndex) {
-    setDraft((current) => {
-      if (!current) {
-        return current;
-      }
+  async function handleDeletePhoto(photoIndex) {
+    if (!draft) {
+      return;
+    }
 
-      const nextUrls = normalizePhotos(current.photosText ?? current.photos).filter(
-        (_, index) => index !== photoIndex
+    const currentUrls = normalizePhotos(draft.photosText ?? draft.photos);
+    const targetUrl = currentUrls[photoIndex];
+    if (!targetUrl) {
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setStatus('');
+
+    try {
+      const deleteResult = await deleteProductPhotoByUrl(targetUrl, draft.id);
+
+      setDraft((current) => {
+        if (!current) {
+          return current;
+        }
+
+        const nextUrls = removeFirstPhotoMatch(normalizePhotos(current.photosText ?? current.photos), targetUrl);
+        return {
+          ...current,
+          photos: nextUrls,
+          photosText: nextUrls.join('\n')
+        };
+      });
+
+      setStatus(
+        deleteResult.deleted
+          ? 'Фото удалено из Supabase и из продукта.'
+          : deleteResult.permissionDenied
+            ? 'Фото удалено из продукта. В Supabase не удалено: нет прав (для этого клиента нужна policy delete/select для роли anon, либо удаление через backend с service key).'
+          : deleteResult.missing
+            ? 'Фото удалено из продукта. Файл в Supabase уже отсутствовал.'
+            : 'Фото удалено из продукта. Удаление из Supabase пропущено (внешний URL).'
       );
-      return {
-        ...current,
-        photos: nextUrls,
-        photosText: nextUrls.join('\n')
-      };
-    });
+    } catch (deleteError) {
+      setError(`Ошибка удаления фото: ${deleteError.message}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleSave() {
@@ -657,6 +696,7 @@ function App() {
                                   type="button"
                                   className="photo-delete-btn"
                                   onClick={() => handleDeletePhoto(index)}
+                                  disabled={saving}
                                 >
                                   Удалить
                                 </button>
