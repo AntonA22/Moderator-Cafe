@@ -175,7 +175,6 @@ function OrdersScreen() {
   useEffect(() => {
     if (!selectedOrder) {
       setDraft(null);
-      setStatus('');
       return;
     }
 
@@ -183,8 +182,12 @@ function OrdersScreen() {
       id: selectedOrder.id,
       status: selectedOrder.status
     });
-    setStatus('');
   }, [selectedOrder]);
+
+  useEffect(() => {
+    setStatus('');
+    setError('');
+  }, [selectedId]);
 
   useEffect(() => {
     if (!selectedOrder?.address_id || selectedOrder?.address) {
@@ -278,8 +281,12 @@ function OrdersScreen() {
   }
 
   return (
-    <section className="content">
-      <aside className="panel list-panel">
+    <>
+      {error ? <p className="message error">{error}</p> : null}
+      {status ? <p className="message success">{status}</p> : null}
+
+      <section className="content">
+        <aside className="panel list-panel">
         <div className="controls">
           <button className="ghost" onClick={() => loadOrders()} disabled={loading}>
             Обновить заказы
@@ -328,92 +335,90 @@ function OrdersScreen() {
             </button>
           ))}
         </div>
-      </aside>
+        </aside>
 
-      <section className="panel editor-panel">
-        {error ? <p className="message error">{error}</p> : null}
-        {status ? <p className="message success">{status}</p> : null}
+        <section className="panel editor-panel">
+          {!draft || !selectedOrder ? (
+            <p className="subtle">Выберите заказ из списка слева</p>
+          ) : (
+            <>
+              <div className="editor-head">
+                <h2>Заказ #{shortId(selectedOrder.id)}</h2>
+                <span>{formatDate(selectedOrder.created_at)}</span>
+              </div>
 
-        {!draft || !selectedOrder ? (
-          <p className="subtle">Выберите заказ из списка слева</p>
-        ) : (
-          <>
-            <div className="editor-head">
-              <h2>Заказ #{shortId(selectedOrder.id)}</h2>
-              <span>{formatDate(selectedOrder.created_at)}</span>
-            </div>
+              <div className="order-meta">
+                <p>
+                  <strong>Пользователь:</strong> {userLabel(selectedOrder)}
+                </p>
+                <p>
+                  <strong>Сумма:</strong> {selectedOrder.total_price} ₽
+                </p>
+                <p>
+                  <strong>Позиции:</strong> {selectedOrder.items_count}
+                </p>
+                <p>
+                  <strong>Адрес:</strong>{' '}
+                  {addressLoading ? 'Загрузка адреса...' : formatAddress(selectedOrder.address)}
+                </p>
+                <p>
+                  <strong>Комментарий:</strong> {selectedOrder.comment || '-'}
+                </p>
+              </div>
 
-            <div className="order-meta">
-              <p>
-                <strong>Пользователь:</strong> {userLabel(selectedOrder)}
-              </p>
-              <p>
-                <strong>Сумма:</strong> {selectedOrder.total_price} ₽
-              </p>
-              <p>
-                <strong>Позиции:</strong> {selectedOrder.items_count}
-              </p>
-              <p>
-                <strong>Адрес:</strong>{' '}
-                {addressLoading ? 'Загрузка адреса...' : formatAddress(selectedOrder.address)}
-              </p>
-              <p>
-                <strong>Комментарий:</strong> {selectedOrder.comment || '-'}
-              </p>
-            </div>
+              <div className="form-grid">
+                <label>
+                  Статус
+                  <select
+                    value={draft.status}
+                    onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}
+                  >
+                    {statusOptions
+                      .filter((item) => item !== STATUS_FILTER_ALL)
+                      .map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                  </select>
+                </label>
 
-            <div className="form-grid">
-              <label>
-                Статус
-                <select
-                  value={draft.status}
-                  onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}
+              </div>
+
+              <div className="order-items">
+                <h3>Состав заказа</h3>
+                {selectedOrder.items.length === 0 ? <p className="subtle">Нет позиций</p> : null}
+                {selectedOrder.items.map((item) => (
+                  <div key={item.id} className="order-item-row">
+                    <span>{item?.dessert?.name || `Dessert #${item.dessert_id}`}</span>
+                    <span>{item.qty} x {item.price} ₽</span>
+                    <strong>{item.sum} ₽</strong>
+                  </div>
+                ))}
+              </div>
+
+              <div className="editor-actions">
+                <button
+                  className="ghost"
+                  onClick={() =>
+                    setDraft({
+                      id: selectedOrder.id,
+                      status: selectedOrder.status
+                    })
+                  }
+                  disabled={!isDirty || saving}
                 >
-                  {statusOptions
-                    .filter((item) => item !== STATUS_FILTER_ALL)
-                    .map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                </select>
-              </label>
-
-            </div>
-
-            <div className="order-items">
-              <h3>Состав заказа</h3>
-              {selectedOrder.items.length === 0 ? <p className="subtle">Нет позиций</p> : null}
-              {selectedOrder.items.map((item) => (
-                <div key={item.id} className="order-item-row">
-                  <span>{item?.dessert?.name || `Dessert #${item.dessert_id}`}</span>
-                  <span>{item.qty} x {item.price} ₽</span>
-                  <strong>{item.sum} ₽</strong>
-                </div>
-              ))}
-            </div>
-
-            <div className="editor-actions">
-              <button
-                className="ghost"
-                onClick={() =>
-                  setDraft({
-                    id: selectedOrder.id,
-                    status: selectedOrder.status
-                  })
-                }
-                disabled={!isDirty || saving}
-              >
-                Отменить
-              </button>
-              <button className="primary save-action" onClick={handleSave} disabled={!isDirty || saving}>
-                {saving ? 'Сохраняем...' : 'Сохранить заказ'}
-              </button>
-            </div>
-          </>
-        )}
+                  Отменить
+                </button>
+                <button className="primary save-action" onClick={handleSave} disabled={!isDirty || saving}>
+                  {saving ? 'Сохраняем...' : 'Сохранить заказ'}
+                </button>
+              </div>
+            </>
+          )}
+        </section>
       </section>
-    </section>
+    </>
   );
 }
 
