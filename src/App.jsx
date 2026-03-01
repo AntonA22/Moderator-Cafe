@@ -1,23 +1,34 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   clearAuthSession,
+  createProduct,
+  deleteProduct,
   fetchProducts,
   getStoredAuthSession,
   loginUser,
   updateProduct
 } from './api';
+import CreateProductScreen from './CreateProductScreen';
 import LoginScreen from './LoginScreen';
+import MenuMobileScreen from './mobile/MenuMobileScreen';
 import OrdersScreen from './OrdersScreen';
 import ProfileScreen from './ProfileScreen';
 import { deleteProductPhotoByUrl, uploadProductPhotos } from './supabase';
 
+const PHONE_MEDIA_QUERY = '(max-width: 700px)';
 const NUMBER_FIELDS = ['price', 'weight', 'calories', 'proteins', 'fats', 'carbohydrates'];
 const SCREEN_MENU = 'menu';
+const SCREEN_CREATE = 'create';
 const SCREEN_ORDERS = 'orders';
 const SCREEN_PROFILE = 'profile';
+const MOBILE_MENU_LIST = 'list';
+const MOBILE_MENU_EDITOR = 'editor';
 const ROUTE_LOGIN = '/login';
 
 function screenFromPath(pathname) {
+  if (pathname === '/menu/new') {
+    return SCREEN_CREATE;
+  }
   if (pathname === '/orders') {
     return SCREEN_ORDERS;
   }
@@ -28,6 +39,9 @@ function screenFromPath(pathname) {
 }
 
 function pathFromScreen(screen) {
+  if (screen === SCREEN_CREATE) {
+    return '/menu/new';
+  }
   if (screen === SCREEN_ORDERS) {
     return '/orders';
   }
@@ -116,6 +130,23 @@ function createDraftFromProduct(product) {
   };
 }
 
+function createEmptyProductDraft() {
+  return {
+    name: '',
+    category: '',
+    description: '',
+    price: 0,
+    available: true,
+    weight: 0,
+    calories: 0,
+    proteins: 0,
+    fats: 0,
+    carbohydrates: 0,
+    photos: [],
+    photosText: ''
+  };
+}
+
 function mergePhotoFiles(existingFiles, incomingFiles) {
   const map = new Map();
 
@@ -165,6 +196,14 @@ function readInitialScreen() {
   return screenFromPath(window.location.pathname);
 }
 
+function readInitialPhoneLayout() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+
+  return window.matchMedia(PHONE_MEDIA_QUERY).matches;
+}
+
 function App() {
   const initialSession = useMemo(() => readInitialSession(), []);
   const [accountUser, setAccountUser] = useState(() => initialSession.user);
@@ -174,9 +213,12 @@ function App() {
   );
   const [loggingIn, setLoggingIn] = useState(false);
   const [activeScreen, setActiveScreen] = useState(() => readInitialScreen());
+  const [isPhoneLayout, setIsPhoneLayout] = useState(() => readInitialPhoneLayout());
+  const [mobileMenuView, setMobileMenuView] = useState(MOBILE_MENU_LIST);
   const [products, setProducts] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [draft, setDraft] = useState(null);
+  const [createDraft, setCreateDraft] = useState(() => createEmptyProductDraft());
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('Все');
   const [loading, setLoading] = useState(true);
@@ -184,6 +226,7 @@ function App() {
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [photoFiles, setPhotoFiles] = useState([]);
+  const [createPhotoFiles, setCreatePhotoFiles] = useState([]);
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState('');
 
   const selectedProduct = useMemo(
@@ -225,6 +268,11 @@ function App() {
     () => normalizePhotos(draft?.photosText ?? draft?.photos),
     [draft?.photosText, draft?.photos]
   );
+  const isCreateDirty = useMemo(
+    () => JSON.stringify(buildPayload(createDraft)) !== JSON.stringify(buildPayload(createEmptyProductDraft())),
+    [createDraft]
+  );
+  const canCreate = isCreateDirty || createPhotoFiles.length > 0;
 
   async function handleLoginSubmit({ login, password }) {
     setLoginError('');
@@ -249,6 +297,7 @@ function App() {
       setAccountUser(session.user);
       setIsLoggedIn(true);
       setActiveScreen(SCREEN_MENU);
+      setMobileMenuView(MOBILE_MENU_LIST);
       setError('');
       setStatus('');
     } catch (loginRequestError) {
@@ -264,10 +313,13 @@ function App() {
     setAccountUser(null);
     setLoginError('');
     setActiveScreen(SCREEN_MENU);
+    setMobileMenuView(MOBILE_MENU_LIST);
     setProducts([]);
     setSelectedId(null);
     setDraft(null);
+    setCreateDraft(createEmptyProductDraft());
     setPhotoFiles([]);
+    setCreatePhotoFiles([]);
     setError('');
     setStatus('');
     setLoading(false);
@@ -302,6 +354,31 @@ function App() {
   }, [isLoggedIn]);
 
   useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia(PHONE_MEDIA_QUERY);
+
+    function handleMediaChange(event) {
+      setIsPhoneLayout(event.matches);
+      if (!event.matches) {
+        setMobileMenuView(MOBILE_MENU_LIST);
+      }
+    }
+
+    setIsPhoneLayout(mediaQuery.matches);
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleMediaChange);
+      return () => mediaQuery.removeEventListener('change', handleMediaChange);
+    }
+
+    mediaQuery.addListener(handleMediaChange);
+    return () => mediaQuery.removeListener(handleMediaChange);
+  }, []);
+
+  useEffect(() => {
     if (typeof window === 'undefined') {
       return;
     }
@@ -318,6 +395,16 @@ function App() {
       window.history.replaceState({}, '', targetPath);
     }
   }, [isLoggedIn, activeScreen]);
+
+  useEffect(() => {
+    if (!isPhoneLayout || activeScreen !== SCREEN_MENU) {
+      return;
+    }
+
+    if (!selectedProduct) {
+      setMobileMenuView(MOBILE_MENU_LIST);
+    }
+  }, [activeScreen, isPhoneLayout, selectedProduct]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -374,6 +461,21 @@ function App() {
         [field]: NUMBER_FIELDS.includes(field) ? value : value
       };
     });
+  }
+
+  function handleCreateFieldChange(field, value) {
+    setCreateDraft((current) => ({
+      ...current,
+      [field]: value
+    }));
+  }
+
+  function handleSelectProduct(productId) {
+    setSelectedId(productId);
+
+    if (isPhoneLayout) {
+      setMobileMenuView(MOBILE_MENU_EDITOR);
+    }
   }
 
   async function handleDeletePhoto(photoIndex) {
@@ -464,6 +566,81 @@ function App() {
     }
   }
 
+  async function handleDeleteProduct() {
+    if (!draft) {
+      return;
+    }
+
+    const deletedProductId = draft.id;
+    const deletedProductName = draft.name || `ID ${draft.id}`;
+    const confirmed = window.confirm(`Удалить позицию "${deletedProductName}" из меню?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setStatus('');
+
+    try {
+      await deleteProduct(deletedProductId);
+
+      setProducts((current) => {
+        const remainingProducts = current.filter((product) => product.id !== deletedProductId);
+        setSelectedId((currentSelectedId) =>
+          currentSelectedId === deletedProductId ? remainingProducts[0]?.id ?? null : currentSelectedId
+        );
+        return remainingProducts;
+      });
+      setDraft(null);
+      setPhotoFiles([]);
+      setPreviewPhotoUrl('');
+      setMobileMenuView(MOBILE_MENU_LIST);
+      setStatus(`Позиция "${deletedProductName}" удалена.`);
+    } catch (deleteError) {
+      setError(`Ошибка удаления: ${deleteError.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCreateProduct() {
+    const payload = buildPayload(createDraft);
+
+    setSaving(true);
+    setError('');
+    setStatus('');
+
+    try {
+      const createdProduct = normalizeProduct(await createProduct(payload));
+      let nextProduct = createdProduct;
+      const filesToUpload = createPhotoFiles;
+
+      if (filesToUpload.length > 0) {
+        const uploadedUrls = await uploadProductPhotos(createdProduct.id, filesToUpload);
+        const productWithPhotos = {
+          ...createdProduct,
+          photos: [...normalizePhotos(createdProduct.photos), ...uploadedUrls]
+        };
+
+        await updateProduct(createdProduct.id, buildPayload(productWithPhotos));
+        nextProduct = normalizeProduct(productWithPhotos);
+      }
+
+      setProducts((current) => [nextProduct, ...current]);
+      setSelectedId(nextProduct.id);
+      setCreateDraft(createEmptyProductDraft());
+      setCreatePhotoFiles([]);
+      setActiveScreen(SCREEN_MENU);
+      setMobileMenuView(MOBILE_MENU_LIST);
+      setStatus(`Позиция "${nextProduct.name || `ID ${nextProduct.id}`}" создана.`);
+    } catch (createError) {
+      setError(`Ошибка создания: ${createError.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!isLoggedIn) {
     return (
       <LoginScreen
@@ -484,6 +661,7 @@ function App() {
             <p className="eyebrow">Панель модератора</p>
             <h1>
               {activeScreen === SCREEN_MENU ? 'Редактирование меню' : null}
+              {activeScreen === SCREEN_CREATE ? 'Добавление позиции' : null}
               {activeScreen === SCREEN_ORDERS ? 'Редактирование заказов' : null}
               {activeScreen === SCREEN_PROFILE ? 'Профиль' : null}
             </h1>
@@ -499,9 +677,20 @@ function App() {
         <nav className="top-menu">
           <button
             className={`top-menu-btn ${activeScreen === SCREEN_MENU ? 'active' : ''}`}
-            onClick={() => setActiveScreen(SCREEN_MENU)}
+            onClick={() => {
+              setActiveScreen(SCREEN_MENU);
+              if (isPhoneLayout) {
+                setMobileMenuView(MOBILE_MENU_LIST);
+              }
+            }}
           >
             Редактирование меню
+          </button>
+          <button
+            className={`top-menu-btn ${activeScreen === SCREEN_CREATE ? 'active' : ''}`}
+            onClick={() => setActiveScreen(SCREEN_CREATE)}
+          >
+            Добавить позицию
           </button>
           <button
             className={`top-menu-btn ${activeScreen === SCREEN_ORDERS ? 'active' : ''}`}
@@ -518,250 +707,311 @@ function App() {
         </nav>
 
         {activeScreen === SCREEN_MENU ? (
-          <>
-            {error ? <p className="message error">{error}</p> : null}
-            {status ? <p className="message success">{status}</p> : null}
+          isPhoneLayout ? (
+            <MenuMobileScreen
+              error={error}
+              status={status}
+              view={mobileMenuView}
+              loading={loading}
+              search={search}
+              category={category}
+              categories={categories}
+              products={filteredProducts}
+              selectedId={selectedId}
+              draft={draft}
+              draftPhotoUrls={draftPhotoUrls}
+              saving={saving}
+              canSave={canSave}
+              isDirty={isDirty}
+              hasPendingPhotos={hasPendingPhotos}
+              photoFilesCount={photoFiles.length}
+              onSearchChange={setSearch}
+              onCategoryChange={setCategory}
+              onRefresh={() => loadProducts()}
+              onSelectProduct={handleSelectProduct}
+              onBackToList={() => setMobileMenuView(MOBILE_MENU_LIST)}
+              onFieldChange={handleFieldChange}
+              onDeletePhoto={handleDeletePhoto}
+              onPreviewPhoto={setPreviewPhotoUrl}
+              onFilesSelected={(incomingFiles) =>
+                setPhotoFiles((current) => mergePhotoFiles(current, incomingFiles))
+              }
+              onReset={() => {
+                setDraft(createDraftFromProduct(selectedProduct));
+                setPhotoFiles([]);
+              }}
+              onSave={handleSave}
+              onDelete={handleDeleteProduct}
+            />
+          ) : (
+            <>
+              {error ? <p className="message error">{error}</p> : null}
+              {status ? <p className="message success">{status}</p> : null}
 
-            <section className="content">
-              <aside className="panel list-panel">
-                <div className="controls">
-                  <button className="ghost" onClick={() => loadProducts()} disabled={loading}>
-                    Обновить список
-                  </button>
+              <section className="content">
+                <aside className="panel list-panel">
+                  <div className="controls">
+                    <button className="ghost" onClick={() => loadProducts()} disabled={loading}>
+                      Обновить список
+                    </button>
 
-                  <input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Поиск по названию и описанию"
-                  />
-                  <select value={category} onChange={(event) => setCategory(event.target.value)}>
-                    {categories.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <input
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Поиск по названию и описанию"
+                    />
+                    <select value={category} onChange={(event) => setCategory(event.target.value)}>
+                      {categories.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div className="list-scroll">
-                  {loading ? <p className="subtle">Загрузка...</p> : null}
-                  {!loading && filteredProducts.length === 0 ? (
-                    <p className="subtle">Ничего не найдено</p>
-                  ) : null}
+                  <div className="list-scroll">
+                    {loading ? <p className="subtle">Загрузка...</p> : null}
+                    {!loading && filteredProducts.length === 0 ? (
+                      <p className="subtle">Ничего не найдено</p>
+                    ) : null}
 
-                  {filteredProducts.map((product) => {
-                    const coverPhoto = normalizePhotos(product.photos)[0] || '';
+                    {filteredProducts.map((product) => {
+                      const coverPhoto = normalizePhotos(product.photos)[0] || '';
 
-                    return (
-                      <button
-                        key={product.id}
-                        className={`product-card ${product.id === selectedId ? 'active' : ''}`}
-                        onClick={() => setSelectedId(product.id)}
-                      >
-                        <div className="product-card-main">
-                          {coverPhoto ? (
-                            <img className="product-thumb" src={coverPhoto} alt={product.name} loading="lazy" />
-                          ) : (
-                            <div className="product-thumb product-thumb-empty">Фото</div>
-                          )}
-                          <div>
-                            <strong>{product.name}</strong>
-                            <p>{product.category}</p>
+                      return (
+                        <button
+                          key={product.id}
+                          className={`product-card ${product.id === selectedId ? 'active' : ''}`}
+                          onClick={() => handleSelectProduct(product.id)}
+                        >
+                          <div className="product-card-main">
+                            {coverPhoto ? (
+                              <img className="product-thumb" src={coverPhoto} alt={product.name} loading="lazy" />
+                            ) : (
+                              <div className="product-thumb product-thumb-empty">Фото</div>
+                            )}
+                            <div>
+                              <strong>{product.name}</strong>
+                              <p>{product.category}</p>
+                            </div>
                           </div>
-                        </div>
-                        <div className="chip-line">
-                          <span className="chip">{product.price} ₽</span>
-                          <span className={`chip ${product.available ? 'ok' : 'off'}`}>
-                            {product.available ? 'В наличии' : 'Нет'}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </aside>
-
-              <section className="panel editor-panel">
-                {!draft ? (
-                  <p className="subtle">Выберите продукт из списка слева</p>
-                ) : (
-                  <>
-                    <div className="editor-head">
-                      <h2>{draft.name || 'Без названия'}</h2>
-                      <span>ID: {draft.id}</span>
-                    </div>
-
-                    <div className="form-grid">
-                      <label>
-                        Название
-                        <input
-                          value={draft.name}
-                          onChange={(event) => handleFieldChange('name', event.target.value)}
-                        />
-                      </label>
-
-                      <label>
-                        Категория
-                        <input
-                          value={draft.category}
-                          onChange={(event) => handleFieldChange('category', event.target.value)}
-                        />
-                      </label>
-
-                      <label className="full">
-                        Описание
-                        <textarea
-                          rows="3"
-                          value={draft.description}
-                          onChange={(event) => handleFieldChange('description', event.target.value)}
-                        />
-                      </label>
-
-                      <label>
-                        Цена (₽)
-                        <input
-                          type="number"
-                          value={draft.price}
-                          onChange={(event) => handleFieldChange('price', event.target.value)}
-                        />
-                      </label>
-
-                      <label>
-                        Вес (г)
-                        <input
-                          type="number"
-                          value={draft.weight}
-                          onChange={(event) => handleFieldChange('weight', event.target.value)}
-                        />
-                      </label>
-
-                      <label>
-                        Калории
-                        <input
-                          type="number"
-                          value={draft.calories}
-                          onChange={(event) => handleFieldChange('calories', event.target.value)}
-                        />
-                      </label>
-
-                      <label>
-                        Белки
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={draft.proteins}
-                          onChange={(event) => handleFieldChange('proteins', event.target.value)}
-                        />
-                      </label>
-
-                      <label>
-                        Жиры
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={draft.fats}
-                          onChange={(event) => handleFieldChange('fats', event.target.value)}
-                        />
-                      </label>
-
-                      <label>
-                        Углеводы
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={draft.carbohydrates}
-                          onChange={(event) => handleFieldChange('carbohydrates', event.target.value)}
-                        />
-                      </label>
-
-                      <div className="full">
-                        <div className="photo-block-head">
-                          <p className="subtle">Картинок: {draftPhotoUrls.length}</p>
-                        </div>
-
-                        {draftPhotoUrls.length === 0 ? (
-                          <p className="subtle">Фото не добавлены</p>
-                        ) : (
-                          <div className="photo-medium-grid">
-                            {draftPhotoUrls.map((url, index) => (
-                              <div key={`${url}-${index}`} className="photo-medium-item">
-                                <button
-                                  type="button"
-                                  className="photo-open-btn"
-                                  onClick={() => setPreviewPhotoUrl(url)}
-                                >
-                                  <img src={url} alt={`${draft.name || 'Продукт'} ${index + 1}`} loading="lazy" />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="photo-delete-btn"
-                                  onClick={() => handleDeletePhoto(index)}
-                                  disabled={saving}
-                                >
-                                  Удалить
-                                </button>
-                              </div>
-                            ))}
+                          <div className="chip-line">
+                            <span className="chip">{product.price} ₽</span>
+                            <span className={`chip ${product.available ? 'ok' : 'off'}`}>
+                              {product.available ? 'В наличии' : 'Нет'}
+                            </span>
                           </div>
-                        )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </aside>
+
+                <section className="panel editor-panel">
+                  {!draft ? (
+                    <p className="subtle">Выберите продукт из списка слева</p>
+                  ) : (
+                    <>
+                      <div className="editor-head">
+                        <h2>{draft.name || 'Без названия'}</h2>
+                        <span>ID: {draft.id}</span>
                       </div>
 
-                      <label className="full">
-                        Добавить фото (файлы в Supabase)
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          onChange={(event) => {
-                            const incomingFiles = Array.from(event.target.files || []);
-                            setPhotoFiles((current) => mergePhotoFiles(current, incomingFiles));
-                            event.target.value = '';
+                      <div className="form-grid">
+                        <label>
+                          Название
+                          <input
+                            value={draft.name}
+                            onChange={(event) => handleFieldChange('name', event.target.value)}
+                          />
+                        </label>
+
+                        <label>
+                          Категория
+                          <input
+                            value={draft.category}
+                            onChange={(event) => handleFieldChange('category', event.target.value)}
+                          />
+                        </label>
+
+                        <label className="full">
+                          Описание
+                          <textarea
+                            rows="3"
+                            value={draft.description}
+                            onChange={(event) => handleFieldChange('description', event.target.value)}
+                          />
+                        </label>
+
+                        <label>
+                          Цена (₽)
+                          <input
+                            type="number"
+                            value={draft.price}
+                            onChange={(event) => handleFieldChange('price', event.target.value)}
+                          />
+                        </label>
+
+                        <label>
+                          Вес (г)
+                          <input
+                            type="number"
+                            value={draft.weight}
+                            onChange={(event) => handleFieldChange('weight', event.target.value)}
+                          />
+                        </label>
+
+                        <label>
+                          Калории
+                          <input
+                            type="number"
+                            value={draft.calories}
+                            onChange={(event) => handleFieldChange('calories', event.target.value)}
+                          />
+                        </label>
+
+                        <label>
+                          Белки
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={draft.proteins}
+                            onChange={(event) => handleFieldChange('proteins', event.target.value)}
+                          />
+                        </label>
+
+                        <label>
+                          Жиры
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={draft.fats}
+                            onChange={(event) => handleFieldChange('fats', event.target.value)}
+                          />
+                        </label>
+
+                        <label>
+                          Углеводы
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={draft.carbohydrates}
+                            onChange={(event) => handleFieldChange('carbohydrates', event.target.value)}
+                          />
+                        </label>
+
+                        <div className="full">
+                          <div className="photo-block-head">
+                            <p className="subtle">Картинок: {draftPhotoUrls.length}</p>
+                          </div>
+
+                          {draftPhotoUrls.length === 0 ? (
+                            <p className="subtle">Фото не добавлены</p>
+                          ) : (
+                            <div className="photo-medium-grid">
+                              {draftPhotoUrls.map((url, index) => (
+                                <div key={`${url}-${index}`} className="photo-medium-item">
+                                  <button
+                                    type="button"
+                                    className="photo-open-btn"
+                                    onClick={() => setPreviewPhotoUrl(url)}
+                                  >
+                                    <img src={url} alt={`${draft.name || 'Продукт'} ${index + 1}`} loading="lazy" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="photo-delete-btn"
+                                    onClick={() => handleDeletePhoto(index)}
+                                    disabled={saving}
+                                  >
+                                    Удалить
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <label className="full">
+                          Добавить фото (файлы в Supabase)
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={(event) => {
+                              const incomingFiles = Array.from(event.target.files || []);
+                              setPhotoFiles((current) => mergePhotoFiles(current, incomingFiles));
+                              event.target.value = '';
+                            }}
+                          />
+                          <span className="subtle">
+                            Файлы загрузятся в Supabase при нажатии кнопки сохранения.
+                          </span>
+                          {photoFiles.length === 0 ? (
+                            <span className="subtle">Файлы пока не выбраны.</span>
+                          ) : (
+                            <span className="subtle">Выбрано файлов: {photoFiles.length}</span>
+                          )}
+                        </label>
+
+                        <label className="checkbox">
+                          <input
+                            type="checkbox"
+                            checked={draft.available}
+                            onChange={(event) => handleFieldChange('available', event.target.checked)}
+                          />
+                          Доступен для заказа
+                        </label>
+                      </div>
+
+                      <div className="editor-actions">
+                        <button className="danger" onClick={handleDeleteProduct} disabled={saving}>
+                          {saving ? 'Удаляем...' : 'Удалить позицию'}
+                        </button>
+                        <button
+                          className="ghost"
+                          onClick={() => {
+                            setDraft(createDraftFromProduct(selectedProduct));
+                            setPhotoFiles([]);
                           }}
-                        />
-                        <span className="subtle">
-                          Файлы загрузятся в Supabase при нажатии кнопки сохранения.
-                        </span>
-                        {photoFiles.length === 0 ? (
-                          <span className="subtle">Файлы пока не выбраны.</span>
-                        ) : (
-                          <span className="subtle">Выбрано файлов: {photoFiles.length}</span>
-                        )}
-                      </label>
-
-                      <label className="checkbox">
-                        <input
-                          type="checkbox"
-                          checked={draft.available}
-                          onChange={(event) => handleFieldChange('available', event.target.checked)}
-                        />
-                        Доступен для заказа
-                      </label>
-                    </div>
-
-                    <div className="editor-actions">
-                      <button
-                        className="ghost"
-                        onClick={() => {
-                          setDraft(createDraftFromProduct(selectedProduct));
-                          setPhotoFiles([]);
-                        }}
-                        disabled={(!isDirty && !hasPendingPhotos) || saving}
-                      >
-                        Отменить
-                      </button>
-                      <button className="primary save-action" onClick={handleSave} disabled={!canSave || saving}>
-                        {saving
-                          ? 'Сохраняем...'
-                          : hasPendingPhotos
-                            ? 'Загрузить фото и сохранить'
-                            : 'Сохранить изменения'}
-                      </button>
-                    </div>
-                  </>
-                )}
+                          disabled={(!isDirty && !hasPendingPhotos) || saving}
+                        >
+                          Отменить
+                        </button>
+                        <button className="primary save-action" onClick={handleSave} disabled={!canSave || saving}>
+                          {saving
+                            ? 'Сохраняем...'
+                            : hasPendingPhotos
+                              ? 'Загрузить фото и сохранить'
+                              : 'Сохранить изменения'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </section>
               </section>
-            </section>
-          </>
+            </>
+          )
+        ) : null}
+
+        {activeScreen === SCREEN_CREATE ? (
+          <CreateProductScreen
+            error={error}
+            status={status}
+            draft={createDraft}
+            photoFilesCount={createPhotoFiles.length}
+            saving={saving}
+            canCreate={canCreate}
+            onFieldChange={handleCreateFieldChange}
+            onFilesSelected={(incomingFiles) =>
+              setCreatePhotoFiles((current) => mergePhotoFiles(current, incomingFiles))
+            }
+            onReset={() => {
+              setCreateDraft(createEmptyProductDraft());
+              setCreatePhotoFiles([]);
+            }}
+            onSubmit={handleCreateProduct}
+          />
         ) : null}
 
         {activeScreen === SCREEN_ORDERS ? <OrdersScreen /> : null}

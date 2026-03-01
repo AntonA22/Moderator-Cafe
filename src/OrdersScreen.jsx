@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchAddressById, fetchOrders, updateOrder } from './api';
+import OrdersMobileScreen from './mobile/OrdersMobileScreen';
 
+const PHONE_MEDIA_QUERY = '(max-width: 700px)';
 const STATUS_OPTIONS = ['new', 'processing', 'shipped', 'delivered', 'cancelled'];
 const STATUS_FILTER_ALL = 'all';
 const USER_FILTER_ALL = 'all';
+const MOBILE_ORDER_LIST = 'list';
+const MOBILE_ORDER_EDITOR = 'editor';
 
 function normalizeOrder(order) {
   return {
@@ -83,7 +87,17 @@ function formatAddress(address) {
   return details.join(', ') || '-';
 }
 
+function readInitialPhoneLayout() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+
+  return window.matchMedia(PHONE_MEDIA_QUERY).matches;
+}
+
 function OrdersScreen() {
+  const [isPhoneLayout, setIsPhoneLayout] = useState(() => readInitialPhoneLayout());
+  const [mobileOrderView, setMobileOrderView] = useState(MOBILE_ORDER_LIST);
   const [orders, setOrders] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [statusFilter, setStatusFilter] = useState(STATUS_FILTER_ALL);
@@ -162,13 +176,40 @@ function OrdersScreen() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia(PHONE_MEDIA_QUERY);
+
+    function handleMediaChange(event) {
+      setIsPhoneLayout(event.matches);
+      if (!event.matches) {
+        setMobileOrderView(MOBILE_ORDER_LIST);
+      }
+    }
+
+    setIsPhoneLayout(mediaQuery.matches);
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleMediaChange);
+      return () => mediaQuery.removeEventListener('change', handleMediaChange);
+    }
+
+    mediaQuery.addListener(handleMediaChange);
+    return () => mediaQuery.removeListener(handleMediaChange);
+  }, []);
+
+  useEffect(() => {
     if (filteredOrders.length === 0) {
       setSelectedId(null);
+      setMobileOrderView(MOBILE_ORDER_LIST);
       return;
     }
 
     if (selectedId && !filteredOrders.some((item) => item.id === selectedId)) {
       setSelectedId(null);
+      setMobileOrderView(MOBILE_ORDER_LIST);
     }
   }, [filteredOrders, selectedId]);
 
@@ -188,6 +229,14 @@ function OrdersScreen() {
     setStatus('');
     setError('');
   }, [selectedId]);
+
+  function handleSelectOrder(orderId) {
+    setSelectedId(orderId);
+
+    if (isPhoneLayout) {
+      setMobileOrderView(MOBILE_ORDER_EDITOR);
+    }
+  }
 
   useEffect(() => {
     if (!selectedOrder?.address_id || selectedOrder?.address) {
@@ -280,6 +329,46 @@ function OrdersScreen() {
     }
   }
 
+  if (isPhoneLayout) {
+    return (
+      <OrdersMobileScreen
+        error={error}
+        status={status}
+        view={mobileOrderView}
+        loading={loading}
+        statusFilter={statusFilter}
+        userFilter={userFilter}
+        statusOptions={statusOptions}
+        userOptions={userOptions}
+        orders={filteredOrders}
+        selectedId={selectedId}
+        selectedOrder={selectedOrder}
+        draft={draft}
+        saving={saving}
+        isDirty={isDirty}
+        addressLoading={addressLoading}
+        onStatusFilterChange={setStatusFilter}
+        onUserFilterChange={setUserFilter}
+        onRefresh={() => loadOrders()}
+        onSelectOrder={handleSelectOrder}
+        onBackToList={() => setMobileOrderView(MOBILE_ORDER_LIST)}
+        onDraftStatusChange={(value) => setDraft((current) => ({ ...current, status: value }))}
+        onReset={() =>
+          setDraft({
+            id: selectedOrder.id,
+            status: selectedOrder.status
+          })
+        }
+        onSave={handleSave}
+        formatDate={formatDate}
+        shortId={shortId}
+        userLabel={userLabel}
+        formatAddress={formatAddress}
+        statusFilterAll={STATUS_FILTER_ALL}
+      />
+    );
+  }
+
   return (
     <>
       {error ? <p className="message error">{error}</p> : null}
@@ -320,7 +409,7 @@ function OrdersScreen() {
             <button
               key={order.id}
               className={`product-card ${order.id === selectedId ? 'active' : ''}`}
-              onClick={() => setSelectedId(order.id)}
+              onClick={() => handleSelectOrder(order.id)}
             >
               <div>
                 <strong>Заказ #{shortId(order.id)}</strong>

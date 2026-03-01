@@ -140,6 +140,15 @@ export async function fetchProducts() {
   });
 }
 
+export async function createProduct(payload) {
+  const body = await request('/api/admin/products', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  return body?.data || body;
+}
+
 export async function fetchOrders() {
   const pickOrders = (payload) => {
     if (Array.isArray(payload)) {
@@ -233,6 +242,12 @@ export async function updateProduct(productId, payload) {
     }
     await updateWithMethod(productId, payload, 'PATCH');
   }
+}
+
+export async function deleteProduct(productId) {
+  return request(`/api/admin/products/${productId}`, {
+    method: 'DELETE'
+  });
 }
 
 export async function updateOrder(orderId, payload) {
