@@ -6,6 +6,7 @@ const pendingAddressRequests = new Map();
 
 const endpoint = (path) => `${API_BASE_URL}${path}`;
 
+// jielwf
 function safeRead(key) {
   if (typeof window === 'undefined') {
     return '';
