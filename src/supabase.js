@@ -8,6 +8,48 @@ function buildFilePath(productId, fileName) {
   return `product${productId}/${fileName}`;
 }
 
+function splitFileName(fileName) {
+  const normalizedName = String(fileName || '').trim();
+  if (!normalizedName) {
+    return { baseName: 'photo', extension: '' };
+  }
+
+  const lastDotIndex = normalizedName.lastIndexOf('.');
+  if (lastDotIndex <= 0 || lastDotIndex === normalizedName.length - 1) {
+    return { baseName: normalizedName, extension: '' };
+  }
+
+  return {
+    baseName: normalizedName.slice(0, lastDotIndex),
+    extension: normalizedName.slice(lastDotIndex + 1)
+  };
+}
+
+function sanitizePathSegment(value) {
+  const normalized = String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-._]+|[-._]+$/g, '')
+    .toLowerCase();
+
+  return normalized || '';
+}
+
+function buildSafeUploadFileName(fileName) {
+  const { baseName, extension } = splitFileName(fileName);
+  const safeBaseName = sanitizePathSegment(baseName) || 'photo';
+  const safeExtension = sanitizePathSegment(extension).replace(/\.+/g, '');
+  const uniqueSuffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+  if (!safeExtension) {
+    return `${safeBaseName}-${uniqueSuffix}`;
+  }
+
+  return `${safeBaseName}-${uniqueSuffix}.${safeExtension}`;
+}
+
 function encodePath(path) {
   return path
     .split('/')
@@ -151,7 +193,7 @@ export async function uploadProductPhotos(productId, files) {
   const urls = [];
 
   for (const file of files) {
-    const path = buildFilePath(productId, file.name);
+    const path = buildFilePath(productId, buildSafeUploadFileName(file.name));
     try {
       await uploadFile(path, file);
     } catch (error) {

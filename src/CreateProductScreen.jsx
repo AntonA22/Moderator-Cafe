@@ -1,15 +1,22 @@
+import { useRef } from 'react';
+
 function CreateProductScreen({
   error,
   status,
   draft,
+  photoFiles,
   photoFilesCount,
   saving,
   canCreate,
   onFieldChange,
   onFilesSelected,
+  onRemovePendingFile,
+  onClearPendingFiles,
   onReset,
   onSubmit
 }) {
+  const photoInputRef = useRef(null);
+
   return (
     <>
       {error ? <p className="message error">{error}</p> : null}
@@ -38,6 +45,15 @@ function CreateProductScreen({
                 rows="3"
                 value={draft.description}
                 onChange={(event) => onFieldChange('description', event.target.value)}
+              />
+            </label>
+
+            <label className="full">
+              Состав
+              <textarea
+                rows="3"
+                value={draft.composition}
+                onChange={(event) => onFieldChange('composition', event.target.value)}
               />
             </label>
 
@@ -89,9 +105,11 @@ function CreateProductScreen({
               />
             </label>
 
-            <label className="full">
-              Добавить фото (файлы в Supabase)
+            <div className="full file-upload-block">
+              <span>Добавить фото (файлы в Supabase)</span>
               <input
+                ref={photoInputRef}
+                className="file-input-hidden"
                 type="file"
                 accept="image/*"
                 multiple
@@ -101,13 +119,48 @@ function CreateProductScreen({
                   event.target.value = '';
                 }}
               />
+              <button
+                type="button"
+                className="ghost file-picker-btn"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={saving}
+              >
+                Выбор файлов
+              </button>
               <span className="subtle">Файлы будут загружены сразу после создания продукта.</span>
               {photoFilesCount === 0 ? (
                 <span className="subtle">Файлы пока не выбраны.</span>
               ) : (
                 <span className="subtle">Выбрано файлов: {photoFilesCount}</span>
               )}
-            </label>
+              {photoFiles.length > 0 ? (
+                <div className="pending-photo-list">
+                  {photoFiles.map((file, index) => (
+                    <div key={`${file.name}_${file.size}_${file.lastModified}`} className="pending-photo-item">
+                      <span className="pending-photo-name" title={file.name}>
+                        {file.name}
+                      </span>
+                      <button
+                        type="button"
+                        className="ghost pending-photo-remove"
+                        onClick={() => onRemovePendingFile(index)}
+                        disabled={saving}
+                      >
+                        Убрать
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="ghost pending-photo-clear"
+                    onClick={onClearPendingFiles}
+                    disabled={saving}
+                  >
+                    Очистить выбранные
+                  </button>
+                </div>
+              ) : null}
+            </div>
 
             <label className="checkbox">
               <input
@@ -124,11 +177,7 @@ function CreateProductScreen({
               Очистить
             </button>
             <button className="primary save-action" onClick={onSubmit} disabled={!canCreate || saving}>
-              {saving
-                ? 'Создаём...'
-                : photoFilesCount > 0
-                  ? 'Создать и загрузить фото'
-                  : 'Создать позицию'}
+              {saving ? 'Создаём...' : 'Создать'}
             </button>
           </div>
         </section>

@@ -367,6 +367,31 @@ label.checkbox {
   grid-column: 1 / -1;
 }
 
+.file-upload-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.file-input-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+}
+
+.file-picker-btn {
+  align-self: flex-start;
+}
+
 label.checkbox {
   flex-direction: row;
   align-items: center;
@@ -459,6 +484,42 @@ textarea:focus {
   padding: 4px 8px;
   font-size: 0.78rem;
   font-weight: 600;
+}
+
+.pending-photo-list {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.pending-photo-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.pending-photo-name {
+  font-size: 0.82rem;
+  color: #2f4f3d;
+  border: 1px solid #cfe6d7;
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: #f7fdf9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pending-photo-remove {
+  border-radius: 8px;
+  padding: 5px 10px;
+}
+
+.pending-photo-clear {
+  justify-self: start;
+  border-radius: 8px;
+  padding: 5px 10px;
 }
 
 .photo-link-grid {

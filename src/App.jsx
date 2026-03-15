@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   clearAuthSession,
   createProduct,
@@ -67,6 +67,7 @@ function normalizeProduct(product) {
     name: product?.name || '',
     category: product?.category || '',
     description: product?.description || '',
+    composition: product?.composition || '',
     photos,
     available: Boolean(product?.available)
   };
@@ -135,6 +136,7 @@ function createEmptyProductDraft() {
     name: '',
     category: '',
     description: '',
+    composition: '',
     price: 0,
     available: true,
     weight: 0,
@@ -151,14 +153,22 @@ function mergePhotoFiles(existingFiles, incomingFiles) {
   const map = new Map();
 
   existingFiles.forEach((file) => {
-    map.set(`${file.name}_${file.size}_${file.lastModified}`, file);
+    map.set(photoFileKey(file), file);
   });
 
   incomingFiles.forEach((file) => {
-    map.set(`${file.name}_${file.size}_${file.lastModified}`, file);
+    map.set(photoFileKey(file), file);
   });
 
   return Array.from(map.values());
+}
+
+function photoFileKey(file) {
+  return `${file.name}_${file.size}_${file.lastModified}`;
+}
+
+function removeFileByIndex(files, targetIndex) {
+  return files.filter((_, index) => index !== targetIndex);
 }
 
 function removeFirstPhotoMatch(photos, targetUrl) {
@@ -228,6 +238,7 @@ function App() {
   const [photoFiles, setPhotoFiles] = useState([]);
   const [createPhotoFiles, setCreatePhotoFiles] = useState([]);
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState('');
+  const editPhotoInputRef = useRef(null);
 
   const selectedProduct = useMemo(
     () => products.find((product) => product.id === selectedId) || null,
@@ -247,7 +258,8 @@ function App() {
       const byText =
         !needle ||
         product.name.toLowerCase().includes(needle) ||
-        product.description.toLowerCase().includes(needle);
+        product.description.toLowerCase().includes(needle) ||
+        product.composition.toLowerCase().includes(needle);
 
       return byCategory && byText;
     });
@@ -724,6 +736,7 @@ function App() {
               canSave={canSave}
               isDirty={isDirty}
               hasPendingPhotos={hasPendingPhotos}
+              photoFiles={photoFiles}
               photoFilesCount={photoFiles.length}
               onSearchChange={setSearch}
               onCategoryChange={setCategory}
@@ -736,6 +749,10 @@ function App() {
               onFilesSelected={(incomingFiles) =>
                 setPhotoFiles((current) => mergePhotoFiles(current, incomingFiles))
               }
+              onRemovePendingFile={(fileIndex) =>
+                setPhotoFiles((current) => removeFileByIndex(current, fileIndex))
+              }
+              onClearPendingFiles={() => setPhotoFiles([])}
               onReset={() => {
                 setDraft(createDraftFromProduct(selectedProduct));
                 setPhotoFiles([]);
@@ -758,7 +775,7 @@ function App() {
                     <input
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
-                      placeholder="Поиск по названию и описанию"
+                      placeholder="Поиск по названию, описанию и составу"
                     />
                     <select value={category} onChange={(event) => setCategory(event.target.value)}>
                       {categories.map((item) => (
@@ -840,6 +857,15 @@ function App() {
                             rows="3"
                             value={draft.description}
                             onChange={(event) => handleFieldChange('description', event.target.value)}
+                          />
+                        </label>
+
+                        <label className="full">
+                          Состав
+                          <textarea
+                            rows="3"
+                            value={draft.composition}
+                            onChange={(event) => handleFieldChange('composition', event.target.value)}
                           />
                         </label>
 
@@ -932,9 +958,11 @@ function App() {
                           )}
                         </div>
 
-                        <label className="full">
-                          Добавить фото (файлы в Supabase)
+                        <div className="full file-upload-block">
+                          <span>Добавить фото (файлы в Supabase)</span>
                           <input
+                            ref={editPhotoInputRef}
+                            className="file-input-hidden"
                             type="file"
                             accept="image/*"
                             multiple
@@ -944,6 +972,14 @@ function App() {
                               event.target.value = '';
                             }}
                           />
+                          <button
+                            type="button"
+                            className="ghost file-picker-btn"
+                            onClick={() => editPhotoInputRef.current?.click()}
+                            disabled={saving}
+                          >
+                            Выбор файлов
+                          </button>
                           <span className="subtle">
                             Файлы загрузятся в Supabase при нажатии кнопки сохранения.
                           </span>
@@ -952,7 +988,36 @@ function App() {
                           ) : (
                             <span className="subtle">Выбрано файлов: {photoFiles.length}</span>
                           )}
-                        </label>
+                          {photoFiles.length > 0 ? (
+                            <div className="pending-photo-list">
+                              {photoFiles.map((file, index) => (
+                                <div key={photoFileKey(file)} className="pending-photo-item">
+                                  <span className="pending-photo-name" title={file.name}>
+                                    {file.name}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="ghost pending-photo-remove"
+                                    onClick={() =>
+                                      setPhotoFiles((current) => removeFileByIndex(current, index))
+                                    }
+                                    disabled={saving}
+                                  >
+                                    Убрать
+                                  </button>
+                                </div>
+                              ))}
+                              <button
+                                type="button"
+                                className="ghost pending-photo-clear"
+                                onClick={() => setPhotoFiles([])}
+                                disabled={saving}
+                              >
+                                Очистить выбранные
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
 
                         <label className="checkbox">
                           <input
@@ -979,11 +1044,7 @@ function App() {
                           Отменить
                         </button>
                         <button className="primary save-action" onClick={handleSave} disabled={!canSave || saving}>
-                          {saving
-                            ? 'Сохраняем...'
-                            : hasPendingPhotos
-                              ? 'Загрузить фото и сохранить'
-                              : 'Сохранить изменения'}
+                          {saving ? 'Сохраняем...' : 'Сохранить'}
                         </button>
                       </div>
                     </>
@@ -999,6 +1060,7 @@ function App() {
             error={error}
             status={status}
             draft={createDraft}
+            photoFiles={createPhotoFiles}
             photoFilesCount={createPhotoFiles.length}
             saving={saving}
             canCreate={canCreate}
@@ -1006,6 +1068,10 @@ function App() {
             onFilesSelected={(incomingFiles) =>
               setCreatePhotoFiles((current) => mergePhotoFiles(current, incomingFiles))
             }
+            onRemovePendingFile={(fileIndex) =>
+              setCreatePhotoFiles((current) => removeFileByIndex(current, fileIndex))
+            }
+            onClearPendingFiles={() => setCreatePhotoFiles([])}
             onReset={() => {
               setCreateDraft(createEmptyProductDraft());
               setCreatePhotoFiles([]);

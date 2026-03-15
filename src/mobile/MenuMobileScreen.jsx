@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+
 function MenuMobileScreen({
   error,
   status,
@@ -14,6 +16,7 @@ function MenuMobileScreen({
   canSave,
   isDirty,
   hasPendingPhotos,
+  photoFiles,
   photoFilesCount,
   onSearchChange,
   onCategoryChange,
@@ -24,10 +27,14 @@ function MenuMobileScreen({
   onDeletePhoto,
   onPreviewPhoto,
   onFilesSelected,
+  onRemovePendingFile,
+  onClearPendingFiles,
   onReset,
   onSave,
   onDelete
 }) {
+  const photoInputRef = useRef(null);
+
   if (view === 'list') {
     return (
       <>
@@ -44,7 +51,7 @@ function MenuMobileScreen({
               <input
                 value={search}
                 onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="Поиск по названию и описанию"
+                placeholder="Поиск по названию, описанию и составу"
               />
 
               <select value={category} onChange={(event) => onCategoryChange(event.target.value)}>
@@ -141,6 +148,15 @@ function MenuMobileScreen({
                   />
                 </label>
 
+                <label className="full">
+                  Состав
+                  <textarea
+                    rows="3"
+                    value={draft.composition}
+                    onChange={(event) => onFieldChange('composition', event.target.value)}
+                  />
+                </label>
+
                 <label>
                   Цена (₽)
                   <input type="number" value={draft.price} onChange={(event) => onFieldChange('price', event.target.value)} />
@@ -213,9 +229,11 @@ function MenuMobileScreen({
                   )}
                 </div>
 
-                <label className="full">
-                  Добавить фото (файлы в Supabase)
+                <div className="full file-upload-block">
+                  <span>Добавить фото (файлы в Supabase)</span>
                   <input
+                    ref={photoInputRef}
+                    className="file-input-hidden"
                     type="file"
                     accept="image/*"
                     multiple
@@ -225,13 +243,51 @@ function MenuMobileScreen({
                       event.target.value = '';
                     }}
                   />
+                  <button
+                    type="button"
+                    className="ghost file-picker-btn"
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={saving}
+                  >
+                    Выбор файлов
+                  </button>
                   <span className="subtle">Файлы загрузятся в Supabase при нажатии кнопки сохранения.</span>
                   {photoFilesCount === 0 ? (
                     <span className="subtle">Файлы пока не выбраны.</span>
                   ) : (
                     <span className="subtle">Выбрано файлов: {photoFilesCount}</span>
                   )}
-                </label>
+                  {photoFiles.length > 0 ? (
+                    <div className="pending-photo-list">
+                      {photoFiles.map((file, index) => (
+                        <div
+                          key={`${file.name}_${file.size}_${file.lastModified}`}
+                          className="pending-photo-item"
+                        >
+                          <span className="pending-photo-name" title={file.name}>
+                            {file.name}
+                          </span>
+                          <button
+                            type="button"
+                            className="ghost pending-photo-remove"
+                            onClick={() => onRemovePendingFile(index)}
+                            disabled={saving}
+                          >
+                            Убрать
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="ghost pending-photo-clear"
+                        onClick={onClearPendingFiles}
+                        disabled={saving}
+                      >
+                        Очистить выбранные
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
 
                 <label className="checkbox">
                   <input
@@ -251,11 +307,7 @@ function MenuMobileScreen({
                   Отменить
                 </button>
                 <button className="primary save-action" onClick={onSave} disabled={!canSave || saving}>
-                  {saving
-                    ? 'Сохраняем...'
-                    : hasPendingPhotos
-                      ? 'Загрузить и сохранить'
-                      : 'Сохранить'}
+                  {saving ? 'Сохраняем...' : 'Сохранить'}
                 </button>
               </div>
             </>
