@@ -593,6 +593,35 @@ textarea:focus {
   align-items: center;
 }
 
+.order-item-product {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.order-item-product img {
+  width: 54px;
+  height: 54px;
+  flex: 0 0 54px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #f4fcf7;
+  border: 1px solid var(--border);
+}
+
+.order-item-product strong {
+  display: block;
+}
+
+.order-item-product p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.35;
+  white-space: pre-line;
+}
+
 .profile-panel {
   padding: 16px;
 }
@@ -679,6 +708,38 @@ button:disabled {
   padding: 4px 8px;
 }
 
+.cake-image-editor {
+  display: grid;
+  gap: 10px;
+  color: var(--muted);
+}
+
+.cake-design-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cake-design-photo-item {
+  position: relative;
+}
+
+.cake-design-preview {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 14px;
+  border: 1px solid #cfe6d7;
+  object-fit: cover;
+  background: #fff;
+}
+
+.cake-design-preview-empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: #f4fcf7;
+}
+
 .photo-modal-close {
   border: 1px solid #cee7d7;
   background: #f4fcf7;
@@ -742,6 +803,10 @@ button:disabled {
   }
 
   .photo-medium-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cake-design-photo-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

@@ -8,6 +8,11 @@ function buildFilePath(productId, fileName) {
   return `product${productId}/${fileName}`;
 }
 
+function buildCakeDesignFilePath(slug, fileName) {
+  const safeSlug = sanitizePathSegment(slug) || 'cake-design';
+  return `cake-designs/${safeSlug}/${fileName}`;
+}
+
 function splitFileName(fileName) {
   const normalizedName = String(fileName || '').trim();
   if (!normalizedName) {
@@ -203,6 +208,37 @@ export async function uploadProductPhotos(productId, files) {
   }
 
   return urls;
+}
+
+export async function uploadCakeDesignPhoto(slug, file) {
+  const path = buildCakeDesignFilePath(slug, buildSafeUploadFileName(file.name));
+  try {
+    await uploadFile(path, file);
+  } catch (error) {
+    throw new Error(`Не удалось загрузить "${file.name}": ${error.message}`);
+  }
+
+  return buildPublicUrl(path);
+}
+
+export async function deleteCakeDesignPhotoByUrl(photoUrl) {
+  const pathInfo = extractPathInfoFromPublicUrl(photoUrl);
+  if (!pathInfo) {
+    return { deleted: false, skipped: true, missing: false, permissionDenied: false };
+  }
+
+  try {
+    await deleteFile(pathInfo.decodedPath);
+    return { deleted: true, skipped: false, missing: false, permissionDenied: false };
+  } catch (error) {
+    if (isPermissionError(error)) {
+      return { deleted: false, skipped: false, missing: false, permissionDenied: true };
+    }
+    if (isNotFoundError(error)) {
+      return { deleted: false, skipped: false, missing: true, permissionDenied: false };
+    }
+    throw error;
+  }
 }
 
 export async function deleteProductPhotoByUrl(photoUrl, productId) {

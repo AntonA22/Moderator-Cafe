@@ -28,6 +28,27 @@ function OrdersMobileScreen({
   formatAddress,
   statusFilterAll
 }) {
+  function orderItemName(item) {
+    return item?.dessert?.name || `Dessert #${item.dessert_id}`;
+  }
+
+  function orderItemPhoto(item) {
+    const photos = item?.dessert?.photos;
+    return Array.isArray(photos) ? photos.find(Boolean) || null : null;
+  }
+
+  function orderItemDescription(item) {
+    if (item?.dessert?.category !== 'custom_cake') {
+      return '';
+    }
+
+    return String(item?.dessert?.description || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('Надпись:') || line.startsWith('Пожелания:') || line.startsWith('Вес:'))
+      .join('\n');
+  }
+
   if (view === 'list') {
     return (
       <>
@@ -151,7 +172,13 @@ function OrdersMobileScreen({
                 {selectedOrder.items.length === 0 ? <p className="subtle">Нет позиций</p> : null}
                 {selectedOrder.items.map((item) => (
                   <div key={item.id} className="order-item-row">
-                    <span>{item?.dessert?.name || `Dessert #${item.dessert_id}`}</span>
+                    <div className="order-item-product">
+                      {orderItemPhoto(item) ? <img src={orderItemPhoto(item)} alt="" /> : null}
+                      <div>
+                        <strong>{orderItemName(item)}</strong>
+                        {orderItemDescription(item) ? <p>{orderItemDescription(item)}</p> : null}
+                      </div>
+                    </div>
                     <span>{item.qty} x {item.price} ₽</span>
                     <strong>{item.sum} ₽</strong>
                   </div>

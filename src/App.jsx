@@ -14,11 +14,13 @@ import MenuMobileScreen from './mobile/MenuMobileScreen';
 import OrdersScreen from './OrdersScreen';
 import ProfileScreen from './ProfileScreen';
 import { deleteProductPhotoByUrl, uploadProductPhotos } from './supabase';
+import CakeDesignsScreen from './CakeDesignsScreen';
 
 const PHONE_MEDIA_QUERY = '(max-width: 700px)';
 const NUMBER_FIELDS = ['price', 'weight', 'calories', 'proteins', 'fats', 'carbohydrates'];
 const SCREEN_MENU = 'menu';
 const SCREEN_CREATE = 'create';
+const SCREEN_CAKE_DESIGNS = 'cake-designs';
 const SCREEN_ORDERS = 'orders';
 const SCREEN_PROFILE = 'profile';
 const MOBILE_MENU_LIST = 'list';
@@ -32,6 +34,9 @@ function screenFromPath(pathname) {
   if (pathname === '/orders') {
     return SCREEN_ORDERS;
   }
+  if (pathname === '/cake-designs') {
+    return SCREEN_CAKE_DESIGNS;
+  }
   if (pathname === '/profile') {
     return SCREEN_PROFILE;
   }
@@ -44,6 +49,9 @@ function pathFromScreen(screen) {
   }
   if (screen === SCREEN_ORDERS) {
     return '/orders';
+  }
+  if (screen === SCREEN_CAKE_DESIGNS) {
+    return '/cake-designs';
   }
   if (screen === SCREEN_PROFILE) {
     return '/profile';
@@ -674,6 +682,7 @@ function App() {
             <h1>
               {activeScreen === SCREEN_MENU ? 'Редактирование меню' : null}
               {activeScreen === SCREEN_CREATE ? 'Добавление позиции' : null}
+              {activeScreen === SCREEN_CAKE_DESIGNS ? 'Торты с надписью' : null}
               {activeScreen === SCREEN_ORDERS ? 'Редактирование заказов' : null}
               {activeScreen === SCREEN_PROFILE ? 'Профиль' : null}
             </h1>
@@ -703,6 +712,12 @@ function App() {
             onClick={() => setActiveScreen(SCREEN_CREATE)}
           >
             Добавить позицию
+          </button>
+          <button
+            className={`top-menu-btn ${activeScreen === SCREEN_CAKE_DESIGNS ? 'active' : ''}`}
+            onClick={() => setActiveScreen(SCREEN_CAKE_DESIGNS)}
+          >
+            Торты с надписью
           </button>
           <button
             className={`top-menu-btn ${activeScreen === SCREEN_ORDERS ? 'active' : ''}`}
@@ -1081,6 +1096,7 @@ function App() {
         ) : null}
 
         {activeScreen === SCREEN_ORDERS ? <OrdersScreen /> : null}
+        {activeScreen === SCREEN_CAKE_DESIGNS ? <CakeDesignsScreen /> : null}
         {activeScreen === SCREEN_PROFILE ? <ProfileScreen user={accountUser} /> : null}
       </main>
       {previewPhotoUrl ? (

@@ -63,10 +63,11 @@ export function getStoredAuthSession() {
 
 async function request(path, options = {}) {
   const token = getAuthToken();
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers = {
     Accept: 'application/json',
-    'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers || {})
   };
 
@@ -138,6 +139,46 @@ export async function fetchProducts() {
       ...product,
       photos
     };
+  });
+}
+
+export async function fetchCakeDesigns() {
+  const body = await request('/api/admin/cake-designs');
+  return body?.data || [];
+}
+
+export async function createCakeDesign(payload) {
+  const body = await request('/api/admin/cake-designs', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  return body?.data || body;
+}
+
+async function updateCakeDesignWithMethod(designId, payload, method) {
+  const body = await request(`/api/admin/cake-designs/${designId}`, {
+    method,
+    body: JSON.stringify(payload)
+  });
+
+  return body?.data || body;
+}
+
+export async function updateCakeDesign(designId, payload) {
+  try {
+    return await updateCakeDesignWithMethod(designId, payload, 'PUT');
+  } catch (error) {
+    if (error?.status && ![404, 405].includes(error.status)) {
+      throw error;
+    }
+    return updateCakeDesignWithMethod(designId, payload, 'PATCH');
+  }
+}
+
+export async function deleteCakeDesign(designId) {
+  return request(`/api/admin/cake-designs/${designId}`, {
+    method: 'DELETE'
   });
 }
 
