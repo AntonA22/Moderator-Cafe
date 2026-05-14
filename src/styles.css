@@ -69,6 +69,29 @@ body {
   margin-top: 12px;
 }
 
+.password-field {
+  position: relative;
+  display: block;
+}
+
+.password-field input {
+  width: 100%;
+  padding-right: 94px;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-radius: 8px;
+  padding: 5px 9px;
+  border: 1px solid #bddfca;
+  background: #f0faf3;
+  color: #2f4f3d;
+  font-size: 0.82rem;
+}
+
 .support-note {
   margin: 14px 0 0;
   color: var(--muted);

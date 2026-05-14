@@ -1,27 +1,11 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 const AUTH_TOKEN_KEY = 'moderator_cafe_auth_token';
 const AUTH_USER_KEY = 'moderator_cafe_auth_user';
+const AUTH_SESSION_HINT_KEY = 'moderator_cafe_has_session';
 const addressCache = new Map();
 const pendingAddressRequests = new Map();
 
 const endpoint = (path) => `${API_BASE_URL}${path}`;
-
-// jielwf
-function safeRead(key) {
-  if (typeof window === 'undefined') {
-    return '';
-  }
-
-  return window.localStorage.getItem(key) || '';
-}
-
-function safeWrite(key, value) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  window.localStorage.setItem(key, value);
-}
 
 function safeRemove(key) {
   if (typeof window === 'undefined') {
@@ -29,50 +13,55 @@ function safeRemove(key) {
   }
 
   window.localStorage.removeItem(key);
+  window.sessionStorage.removeItem(key);
 }
 
-function getAuthToken() {
-  return safeRead(AUTH_TOKEN_KEY);
-}
-
-function saveAuthSession(token, user) {
-  safeWrite(AUTH_TOKEN_KEY, token);
-  safeWrite(AUTH_USER_KEY, JSON.stringify(user || null));
-}
-
-export function clearAuthSession() {
+function clearLegacyAuthData() {
   safeRemove(AUTH_TOKEN_KEY);
   safeRemove(AUTH_USER_KEY);
 }
 
-export function getStoredAuthSession() {
-  const token = getAuthToken();
-  const userRaw = safeRead(AUTH_USER_KEY);
-  let user = null;
+function clearStoredAuthData() {
+  clearLegacyAuthData();
+  safeRemove(AUTH_SESSION_HINT_KEY);
+}
 
-  if (userRaw) {
-    try {
-      user = JSON.parse(userRaw);
-    } catch {
-      user = null;
-    }
+function markAuthSession() {
+  if (typeof window === 'undefined') {
+    return;
   }
 
-  return { token, user };
+  window.sessionStorage.setItem(AUTH_SESSION_HINT_KEY, '1');
+}
+
+function hasAuthSessionHint() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.sessionStorage.getItem(AUTH_SESSION_HINT_KEY) === '1';
+}
+
+export function clearAuthSession() {
+  clearStoredAuthData();
+}
+
+export function getStoredAuthSession() {
+  clearLegacyAuthData();
+  return { token: hasAuthSessionHint() ? 'cookie-session' : '', user: null };
 }
 
 async function request(path, options = {}) {
-  const token = getAuthToken();
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers = {
     Accept: 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers || {})
   };
 
   const response = await fetch(endpoint(path), {
     ...options,
+    credentials: 'include',
     headers
   });
 
@@ -96,20 +85,35 @@ async function request(path, options = {}) {
 }
 
 export async function loginUser(login, password) {
-  const body = await request('/api/auth/login', {
+  const body = await request('/api/moderator/login', {
     method: 'POST',
     body: JSON.stringify({ login, password })
   });
 
-  const token = body?.token || body?.data?.token;
   const user = body?.user || body?.data?.user || null;
 
-  if (!token) {
-    throw new Error('Сервер не вернул токен авторизации.');
+  if (!user) {
+    throw new Error('Сервер не вернул пользователя.');
   }
 
-  saveAuthSession(token, user);
-  return { token, user };
+  clearLegacyAuthData();
+  markAuthSession();
+  return { user };
+}
+
+export async function logoutUser() {
+  try {
+    await request('/api/moderator/logout', { method: 'POST' });
+  } catch {
+    // Cookie could already be expired; local logout should still continue.
+  } finally {
+    clearAuthSession();
+  }
+}
+
+export async function fetchCurrentUser() {
+  const body = await request('/api/moderator/me');
+  return body?.data || body?.user || body;
 }
 
 export async function fetchProducts() {

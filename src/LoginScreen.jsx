@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 function LoginScreen({ defaultLogin = '', loading, error, onSubmit }) {
   const [login, setLogin] = useState(defaultLogin);
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     setLogin(defaultLogin || '');
@@ -40,12 +41,22 @@ function LoginScreen({ defaultLogin = '', loading, error, onSubmit }) {
 
             <label>
               Пароль
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="********"
-              />
+              <span className="password-field">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="********"
+                />
+                <button
+                  className="password-toggle-btn"
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  disabled={loading || !password}
+                >
+                  {showPassword ? 'Скрыть' : 'Показать'}
+                </button>
+              </span>
             </label>
 
             <button className="primary" type="submit" disabled={loading}>

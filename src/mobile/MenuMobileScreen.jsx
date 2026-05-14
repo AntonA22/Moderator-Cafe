@@ -13,6 +13,7 @@ function MenuMobileScreen({
   draft,
   draftPhotoUrls,
   saving,
+  deleting,
   canSave,
   isDirty,
   hasPendingPhotos,
@@ -34,6 +35,7 @@ function MenuMobileScreen({
   onDelete
 }) {
   const photoInputRef = useRef(null);
+  const busy = saving || deleting;
 
   if (view === 'list') {
     return (
@@ -219,7 +221,7 @@ function MenuMobileScreen({
                             type="button"
                             className="photo-delete-btn"
                             onClick={() => onDeletePhoto(index)}
-                            disabled={saving}
+                            disabled={busy}
                           >
                             Удалить
                           </button>
@@ -247,7 +249,7 @@ function MenuMobileScreen({
                     type="button"
                     className="ghost file-picker-btn"
                     onClick={() => photoInputRef.current?.click()}
-                    disabled={saving}
+                  disabled={busy}
                   >
                     Выбор файлов
                   </button>
@@ -271,7 +273,7 @@ function MenuMobileScreen({
                             type="button"
                             className="ghost pending-photo-remove"
                             onClick={() => onRemovePendingFile(index)}
-                            disabled={saving}
+                            disabled={busy}
                           >
                             Убрать
                           </button>
@@ -281,7 +283,7 @@ function MenuMobileScreen({
                         type="button"
                         className="ghost pending-photo-clear"
                         onClick={onClearPendingFiles}
-                        disabled={saving}
+                        disabled={busy}
                       >
                         Очистить выбранные
                       </button>
@@ -300,13 +302,13 @@ function MenuMobileScreen({
               </div>
 
               <div className="mobile-editor-actions">
-                <button className="danger" onClick={onDelete} disabled={saving}>
-                  {saving ? 'Удаляем...' : 'Удалить'}
+                <button className="danger" onClick={onDelete} disabled={busy}>
+                  {deleting ? 'Удаляем...' : 'Удалить'}
                 </button>
-                <button className="ghost" onClick={onReset} disabled={(!isDirty && !hasPendingPhotos) || saving}>
+                <button className="ghost" onClick={onReset} disabled={(!isDirty && !hasPendingPhotos) || busy}>
                   Отменить
                 </button>
-                <button className="primary save-action" onClick={onSave} disabled={!canSave || saving}>
+                <button className="primary save-action" onClick={onSave} disabled={!canSave || busy}>
                   {saving ? 'Сохраняем...' : 'Сохранить'}
                 </button>
               </div>

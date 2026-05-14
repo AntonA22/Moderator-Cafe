@@ -18,6 +18,20 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function normalizeNumberInputValue(value) {
+  const text = String(value);
+
+  if (text === '') {
+    return '';
+  }
+
+  if (text.startsWith('-')) {
+    return `-${normalizeNumberInputValue(text.slice(1))}`;
+  }
+
+  return text.replace(/^0+(?=\d)/, '');
+}
+
 function normalizeDesign(design) {
   const photos = normalizePhotos(design?.photos ?? design?.image_url ?? design?.imageURLString);
   const photoPreviews = normalizePhotos(design?.photo_previews ?? design?.galleryImageURLStrings ?? design?.imageURLString);
@@ -114,6 +128,7 @@ function CakeDesignForm({
   draft,
   imageFiles,
   saving,
+  deleting = false,
   canSubmit,
   onFieldChange,
   onImageFilesSelected,
@@ -125,6 +140,7 @@ function CakeDesignForm({
   onDelete
 }) {
   const imageInputRef = useRef(null);
+  const busy = saving || deleting;
   const pendingImagePreviews = useMemo(
     () => imageFiles.map((file) => URL.createObjectURL(file)),
     [imageFiles]
@@ -245,7 +261,7 @@ function CakeDesignForm({
                 <div className="cake-design-photo-item" key={`${url}-${index}`}>
                   <img className="cake-design-preview" src={url} alt={`${draft.name || 'Торт'} ${index + 1}`} />
                   {index < normalizePhotos(draft.photos).length ? (
-                    <button type="button" className="photo-delete-btn" onClick={() => onRemovePhoto(index)} disabled={saving}>
+                    <button type="button" className="photo-delete-btn" onClick={() => onRemovePhoto(index)} disabled={busy}>
                       Удалить
                     </button>
                   ) : null}
@@ -268,11 +284,11 @@ function CakeDesignForm({
             }}
           />
           <div className="chip-line">
-            <button type="button" className="ghost" onClick={() => imageInputRef.current?.click()} disabled={saving}>
+            <button type="button" className="ghost" onClick={() => imageInputRef.current?.click()} disabled={busy}>
               Выбрать фото
             </button>
             {imageFiles.length > 0 ? (
-              <button type="button" className="ghost" onClick={onClearImageFiles} disabled={saving}>
+              <button type="button" className="ghost" onClick={onClearImageFiles} disabled={busy}>
                 Очистить выбранные
               </button>
             ) : null}
@@ -288,7 +304,7 @@ function CakeDesignForm({
                     type="button"
                     className="ghost pending-photo-remove"
                     onClick={() => onRemoveImageFile(index)}
-                    disabled={saving}
+                    disabled={busy}
                   >
                     Убрать
                   </button>
@@ -310,14 +326,14 @@ function CakeDesignForm({
 
       <div className="editor-actions">
         {mode === 'edit' ? (
-          <button className="danger" onClick={onDelete} disabled={saving}>
-            {saving ? 'Удаляем...' : 'Удалить'}
+          <button className="danger" onClick={onDelete} disabled={busy}>
+            {deleting ? 'Удаляем...' : 'Удалить'}
           </button>
         ) : null}
-        <button className="ghost" onClick={onReset} disabled={!canSubmit || saving}>
+        <button className="ghost" onClick={onReset} disabled={!canSubmit || busy}>
           Отменить
         </button>
-        <button className="primary save-action" onClick={onSubmit} disabled={!canSubmit || saving}>
+        <button className="primary save-action" onClick={onSubmit} disabled={!canSubmit || busy}>
           {saving ? 'Сохраняем...' : mode === 'create' ? 'Создать' : 'Сохранить'}
         </button>
       </div>
@@ -336,6 +352,7 @@ function CakeDesignsScreen() {
   const [mode, setMode] = useState('edit');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
 
@@ -409,11 +426,18 @@ function CakeDesignsScreen() {
   }, [selectedDesign]);
 
   function handleFieldChange(field, value) {
-    setDraft((current) => (current ? { ...current, [field]: value } : current));
+    setDraft((current) => (
+      current
+        ? { ...current, [field]: NUMBER_FIELDS.includes(field) ? normalizeNumberInputValue(value) : value }
+        : current
+    ));
   }
 
   function handleCreateFieldChange(field, value) {
-    setCreateDraft((current) => ({ ...current, [field]: value }));
+    setCreateDraft((current) => ({
+      ...current,
+      [field]: NUMBER_FIELDS.includes(field) ? normalizeNumberInputValue(value) : value
+    }));
   }
 
   function mergeImageFiles(existingFiles, incomingFiles, existingPhotoCount = 0) {
@@ -536,7 +560,7 @@ function CakeDesignsScreen() {
       return;
     }
 
-    setSaving(true);
+    setDeleting(true);
     setError('');
     setStatus('');
 
@@ -556,7 +580,7 @@ function CakeDesignsScreen() {
     } catch (deleteError) {
       setError(`Ошибка удаления: ${deleteError.message}`);
     } finally {
-      setSaving(false);
+      setDeleting(false);
     }
   }
 
@@ -652,6 +676,7 @@ function CakeDesignsScreen() {
             draft={draft || createEmptyDesignDraft()}
             imageFiles={imageFiles}
             saving={saving}
+            deleting={deleting}
             canSubmit={canSave}
             onFieldChange={handleFieldChange}
             onImageFilesSelected={(incomingFiles) =>

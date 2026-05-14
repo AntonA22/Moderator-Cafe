@@ -3,9 +3,11 @@ import {
   clearAuthSession,
   createProduct,
   deleteProduct,
+  fetchCurrentUser,
   fetchProducts,
   getStoredAuthSession,
   loginUser,
+  logoutUser,
   updateProduct
 } from './api';
 import CreateProductScreen from './CreateProductScreen';
@@ -66,6 +68,20 @@ function toNumber(value) {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeNumberInputValue(value) {
+  const text = String(value);
+
+  if (text === '') {
+    return '';
+  }
+
+  if (text.startsWith('-')) {
+    return `-${normalizeNumberInputValue(text.slice(1))}`;
+  }
+
+  return text.replace(/^0+(?=\d)/, '');
 }
 
 function normalizeProduct(product) {
@@ -229,6 +245,7 @@ function App() {
   const [loginError, setLoginError] = useState(() =>
     initialSession.forbidden ? 'Ошибка 403: доступ только для администратора.' : ''
   );
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [loggingIn, setLoggingIn] = useState(false);
   const [activeScreen, setActiveScreen] = useState(() => readInitialScreen());
   const [isPhoneLayout, setIsPhoneLayout] = useState(() => readInitialPhoneLayout());
@@ -241,6 +258,7 @@ function App() {
   const [category, setCategory] = useState('Все');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [photoFiles, setPhotoFiles] = useState([]);
@@ -282,6 +300,7 @@ function App() {
   }, [selectedProduct, draft]);
 
   const hasPendingPhotos = photoFiles.length > 0;
+  const busy = saving || deleting;
   const canSave = isDirty || hasPendingPhotos;
   const accountLabel = accountUser?.username || accountUser?.email || 'неизвестно';
   const draftPhotoUrls = useMemo(
@@ -293,6 +312,39 @@ function App() {
     [createDraft]
   );
   const canCreate = isCreateDirty || createPhotoFiles.length > 0;
+
+  useEffect(() => {
+    async function checkAuthSession() {
+      if (!initialSession.token) {
+        setCheckingAuth(false);
+        return;
+      }
+
+      try {
+        const user = await fetchCurrentUser();
+
+        if (!isAdminUser(user)) {
+          clearAuthSession();
+          setAccountUser(null);
+          setIsLoggedIn(false);
+          setLoginError(user ? 'Ошибка 403: доступ только для администратора.' : '');
+          return;
+        }
+
+        setAccountUser(user);
+        setIsLoggedIn(true);
+        setLoginError('');
+      } catch {
+        clearAuthSession();
+        setAccountUser(null);
+        setIsLoggedIn(false);
+      } finally {
+        setCheckingAuth(false);
+      }
+    }
+
+    checkAuthSession();
+  }, [initialSession.token]);
 
   async function handleLoginSubmit({ login, password }) {
     setLoginError('');
@@ -316,6 +368,7 @@ function App() {
 
       setAccountUser(session.user);
       setIsLoggedIn(true);
+      setCheckingAuth(false);
       setActiveScreen(SCREEN_MENU);
       setMobileMenuView(MOBILE_MENU_LIST);
       setError('');
@@ -327,8 +380,8 @@ function App() {
     }
   }
 
-  function handleLogout() {
-    clearAuthSession();
+  async function handleLogout() {
+    await logoutUser();
     setIsLoggedIn(false);
     setAccountUser(null);
     setLoginError('');
@@ -478,7 +531,7 @@ function App() {
 
       return {
         ...current,
-        [field]: NUMBER_FIELDS.includes(field) ? value : value
+        [field]: NUMBER_FIELDS.includes(field) ? normalizeNumberInputValue(value) : value
       };
     });
   }
@@ -486,7 +539,7 @@ function App() {
   function handleCreateFieldChange(field, value) {
     setCreateDraft((current) => ({
       ...current,
-      [field]: value
+      [field]: NUMBER_FIELDS.includes(field) ? normalizeNumberInputValue(value) : value
     }));
   }
 
@@ -598,7 +651,7 @@ function App() {
       return;
     }
 
-    setSaving(true);
+    setDeleting(true);
     setError('');
     setStatus('');
 
@@ -620,7 +673,7 @@ function App() {
     } catch (deleteError) {
       setError(`Ошибка удаления: ${deleteError.message}`);
     } finally {
-      setSaving(false);
+      setDeleting(false);
     }
   }
 
@@ -662,6 +715,21 @@ function App() {
   }
 
   if (!isLoggedIn) {
+    if (checkingAuth) {
+      return (
+        <div className="page-bg">
+          <div className="grain" />
+          <main className="layout login-layout">
+            <section className="panel login-panel">
+              <p className="eyebrow">Панель модератора</p>
+              <h1>Проверяем вход...</h1>
+              <p className="subtle">Если сессия активна, модерка откроется автоматически.</p>
+            </section>
+          </main>
+        </div>
+      );
+    }
+
     return (
       <LoginScreen
         defaultLogin={accountUser?.username || accountUser?.email || ''}
@@ -748,6 +816,7 @@ function App() {
               draft={draft}
               draftPhotoUrls={draftPhotoUrls}
               saving={saving}
+              deleting={deleting}
               canSave={canSave}
               isDirty={isDirty}
               hasPendingPhotos={hasPendingPhotos}
@@ -963,7 +1032,7 @@ function App() {
                                     type="button"
                                     className="photo-delete-btn"
                                     onClick={() => handleDeletePhoto(index)}
-                                    disabled={saving}
+                                    disabled={busy}
                                   >
                                     Удалить
                                   </button>
@@ -991,7 +1060,7 @@ function App() {
                             type="button"
                             className="ghost file-picker-btn"
                             onClick={() => editPhotoInputRef.current?.click()}
-                            disabled={saving}
+                            disabled={busy}
                           >
                             Выбор файлов
                           </button>
@@ -1016,7 +1085,7 @@ function App() {
                                     onClick={() =>
                                       setPhotoFiles((current) => removeFileByIndex(current, index))
                                     }
-                                    disabled={saving}
+                                    disabled={busy}
                                   >
                                     Убрать
                                   </button>
@@ -1026,7 +1095,7 @@ function App() {
                                 type="button"
                                 className="ghost pending-photo-clear"
                                 onClick={() => setPhotoFiles([])}
-                                disabled={saving}
+                                disabled={busy}
                               >
                                 Очистить выбранные
                               </button>
@@ -1045,8 +1114,8 @@ function App() {
                       </div>
 
                       <div className="editor-actions">
-                        <button className="danger" onClick={handleDeleteProduct} disabled={saving}>
-                          {saving ? 'Удаляем...' : 'Удалить позицию'}
+                        <button className="danger" onClick={handleDeleteProduct} disabled={busy}>
+                          {deleting ? 'Удаляем...' : 'Удалить позицию'}
                         </button>
                         <button
                           className="ghost"
@@ -1054,11 +1123,11 @@ function App() {
                             setDraft(createDraftFromProduct(selectedProduct));
                             setPhotoFiles([]);
                           }}
-                          disabled={(!isDirty && !hasPendingPhotos) || saving}
+                          disabled={(!isDirty && !hasPendingPhotos) || busy}
                         >
                           Отменить
                         </button>
-                        <button className="primary save-action" onClick={handleSave} disabled={!canSave || saving}>
+                        <button className="primary save-action" onClick={handleSave} disabled={!canSave || busy}>
                           {saving ? 'Сохраняем...' : 'Сохранить'}
                         </button>
                       </div>
