@@ -10,6 +10,12 @@ export default defineConfig({
         changeOrigin: true,
         cookieDomainRewrite: '',
         cookiePathRewrite: '/'
+      },
+      '/sanctum': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        cookieDomainRewrite: '',
+        cookiePathRewrite: '/'
       }
     }
   }

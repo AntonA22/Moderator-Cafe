@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import zaryadkaLogo from './assets/zaryadka-logo.png';
 
 function LoginScreen({ defaultLogin = '', loading, error, onSubmit }) {
   const [login, setLogin] = useState(defaultLogin);
@@ -22,7 +23,8 @@ function LoginScreen({ defaultLogin = '', loading, error, onSubmit }) {
       <div className="grain" />
       <main className="layout login-layout">
         <section className="panel login-panel">
-          <p className="eyebrow">Панель модератора</p>
+          <img className="login-logo" src={zaryadkaLogo} alt="Zaryadka Coffee" />
+          <p className="eyebrow">Панель администратора</p>
           <h1>Вход в систему</h1>
           <p className="subtle">Введите данные аккаунта, чтобы редактировать каталог.</p>
 

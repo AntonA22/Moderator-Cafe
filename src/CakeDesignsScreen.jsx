@@ -8,6 +8,11 @@ import {
 import { deleteCakeDesignPhotoByUrl, uploadCakeDesignPhoto } from './supabase';
 
 const NUMBER_FIELDS = ['price', 'weight_grams', 'calories_per_100g', 'sort_order'];
+const FIXED_WEIGHT_OPTIONS = [
+  { title: '0,8 кг', grams: 800 },
+  { title: '1,2 кг', grams: 1200 },
+  { title: '1,5 кг', grams: 1500 }
+];
 
 function toNumber(value) {
   if (value === '' || value === null || value === undefined) {
@@ -32,6 +37,66 @@ function normalizeNumberInputValue(value) {
   return text.replace(/^0+(?=\d)/, '');
 }
 
+function formatWeightTitle(grams) {
+  const value = toNumber(grams);
+  if (!value) {
+    return '';
+  }
+
+  if (value % 1000 === 0) {
+    return `${value / 1000} кг`;
+  }
+
+  return `${Number((value / 1000).toFixed(1)).toString().replace('.', ',')} кг`;
+}
+
+function kgInputValue(grams) {
+  if (grams === '' || grams === null || grams === undefined) {
+    return '';
+  }
+
+  const value = toNumber(grams);
+  return value > 0 ? Number((value / 1000).toFixed(2)) : '';
+}
+
+function gramsFromKgInput(value) {
+  if (value === '' || value === null || value === undefined) {
+    return '';
+  }
+
+  const parsed = Number(String(value).replace(',', '.'));
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 1000) : '';
+}
+
+function normalizeWeightOptions(weights, fallbackGrams = 0) {
+  const source = Array.isArray(weights) ? weights : [];
+  const map = new Map();
+
+  source.forEach((weight) => {
+    const grams = toNumber(weight?.grams);
+    if (grams > 0) {
+      map.set(grams, {
+        title: String(weight?.title || '').trim() || formatWeightTitle(grams),
+        grams
+      });
+    }
+  });
+
+  if (map.size === 0) {
+    FIXED_WEIGHT_OPTIONS.forEach((weight) => map.set(weight.grams, weight));
+  }
+
+  return Array.from(map.values()).sort((left, right) => left.grams - right.grams);
+}
+
+function editableWeightOptions(weights, fallbackGrams = 0) {
+  const source = Array.isArray(weights) && weights.length > 0 ? weights : normalizeWeightOptions(weights, fallbackGrams);
+  return source.map((weight, index) => ({
+    title: String(weight?.title || FIXED_WEIGHT_OPTIONS[index]?.title || ''),
+    grams: weight?.grams ?? FIXED_WEIGHT_OPTIONS[index]?.grams ?? ''
+  }));
+}
+
 function normalizeDesign(design) {
   const photos = normalizePhotos(design?.photos ?? design?.image_url ?? design?.imageURLString);
   const photoPreviews = normalizePhotos(design?.photo_previews ?? design?.galleryImageURLStrings ?? design?.imageURLString);
@@ -49,6 +114,7 @@ function normalizeDesign(design) {
     photo_previews: photoPreviews,
     image_url: photos[0] || '',
     image_preview_url: photoPreviews[0] || photos[0] || '',
+    available_weights: normalizeWeightOptions(design?.availableWeights ?? design?.available_weights, design?.weight_grams),
     available: design?.available !== false
   };
 
@@ -59,6 +125,10 @@ function normalizeDesign(design) {
   if (!normalized.weight_grams && Array.isArray(design?.availableWeights)) {
     normalized.weight_grams = toNumber(design.availableWeights[0]?.grams);
   }
+  normalized.available_weights = normalizeWeightOptions(
+    design?.availableWeights ?? design?.available_weights,
+    normalized.weight_grams
+  );
   if (!normalized.calories_per_100g && design?.kcalPer100g) {
     normalized.calories_per_100g = toNumber(design.kcalPer100g);
   }
@@ -97,7 +167,8 @@ function createEmptyDesignDraft() {
     photos: [],
     photo_previews: [],
     image_url: '',
-    image_preview_url: ''
+    image_preview_url: '',
+    available_weights: FIXED_WEIGHT_OPTIONS
   };
 }
 
@@ -114,6 +185,7 @@ function buildPayload(draft) {
     ...rest,
     photos: normalizePhotos(draft.photos),
     image_url: normalizePhotos(draft.photos)[0] || null,
+    available_weights: normalizeWeightOptions(draft.available_weights, draft.weight_grams),
     ...Object.fromEntries(NUMBER_FIELDS.map((field) => [field, toNumber(draft[field])])),
     available: Boolean(draft.available)
   };
@@ -155,6 +227,36 @@ function CakeDesignForm({
   useEffect(() => {
     return () => pendingImagePreviews.forEach((url) => URL.revokeObjectURL(url));
   }, [pendingImagePreviews]);
+
+  function updateWeightOption(index, value) {
+    const nextWeights = editableWeightOptions(draft.available_weights, draft.weight_grams);
+    const grams = gramsFromKgInput(value);
+    nextWeights[index] = {
+      ...nextWeights[index],
+      grams,
+      title: grams > 0 ? formatWeightTitle(grams) : ''
+    };
+
+    onFieldChange('available_weights', nextWeights);
+  }
+
+  function addWeightOption() {
+    const nextWeights = editableWeightOptions(draft.available_weights, draft.weight_grams);
+    const largest = Math.max(...nextWeights.map((weight) => toNumber(weight.grams)), 1000);
+    const grams = largest + 500;
+    onFieldChange('available_weights', [
+      ...nextWeights,
+      { title: formatWeightTitle(grams), grams }
+    ]);
+  }
+
+  function removeWeightOption(index) {
+    const nextWeights = editableWeightOptions(draft.available_weights, draft.weight_grams)
+      .filter((_, weightIndex) => weightIndex !== index);
+    onFieldChange('available_weights', nextWeights);
+  }
+
+  const weightOptions = editableWeightOptions(draft.available_weights, draft.weight_grams);
 
   return (
     <section className="panel editor-panel">
@@ -206,18 +308,46 @@ function CakeDesignForm({
         </label>
 
         <label>
-          Цена (₽)
+          Цена за 100 г (₽)
           <input type="number" value={draft.price} onChange={(event) => onFieldChange('price', event.target.value)} />
         </label>
 
-        <label>
-          Вес (г)
-          <input
-            type="number"
-            value={draft.weight_grams}
-            onChange={(event) => onFieldChange('weight_grams', event.target.value)}
-          />
-        </label>
+        <div className="full weight-options-editor">
+          <div className="weight-options-head">
+            <div>
+              <span>Доступные веса для заказа</span>
+              <p className="subtle">Покупатель увидит эти варианты в приложении.</p>
+            </div>
+            <button type="button" className="ghost" onClick={addWeightOption} disabled={busy}>
+              Добавить вес
+            </button>
+          </div>
+
+          <div className="weight-options-list">
+            {weightOptions.map((weight, index) => (
+              <div className="weight-option-row" key={`${weight.grams}-${index}`}>
+                <label>
+                  Вес, кг
+                  <input
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    value={kgInputValue(weight.grams)}
+                    onChange={(event) => updateWeightOption(index, event.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => removeWeightOption(index)}
+                  disabled={busy || weightOptions.length <= 1}
+                >
+                  Убрать
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
 
         <label>
           Калории / 100 г
@@ -225,15 +355,6 @@ function CakeDesignForm({
             type="number"
             value={draft.calories_per_100g}
             onChange={(event) => onFieldChange('calories_per_100g', event.target.value)}
-          />
-        </label>
-
-        <label>
-          Порядок
-          <input
-            type="number"
-            value={draft.sort_order}
-            onChange={(event) => onFieldChange('sort_order', event.target.value)}
           />
         </label>
 
@@ -631,12 +752,9 @@ function CakeDesignsScreen() {
                   )}
                   <div>
                     <strong>{design.name}</strong>
-                    <p>{design.subtitle}</p>
                   </div>
                 </div>
                 <div className="chip-line">
-                  <span className="chip">{design.price} ₽</span>
-                  <span className="chip">{design.weight_grams} г</span>
                   <span className={`chip ${design.available ? 'ok' : 'off'}`}>
                     {design.available ? 'Доступен' : 'Скрыт'}
                   </span>

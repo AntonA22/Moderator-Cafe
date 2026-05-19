@@ -17,6 +17,7 @@ import OrdersScreen from './OrdersScreen';
 import ProfileScreen from './ProfileScreen';
 import { deleteProductPhotoByUrl, uploadProductPhotos } from './supabase';
 import CakeDesignsScreen from './CakeDesignsScreen';
+import zaryadkaLogo from './assets/zaryadka-logo.png';
 
 const PHONE_MEDIA_QUERY = '(max-width: 700px)';
 const NUMBER_FIELDS = ['price', 'weight', 'calories', 'proteins', 'fats', 'carbohydrates'];
@@ -82,6 +83,10 @@ function normalizeNumberInputValue(value) {
   }
 
   return text.replace(/^0+(?=\d)/, '');
+}
+
+function toSearchText(value) {
+  return String(value ?? '').toLowerCase();
 }
 
 function normalizeProduct(product) {
@@ -210,7 +215,7 @@ function isAdminUser(user) {
 
 function readInitialSession() {
   const session = getStoredAuthSession();
-  if (session.token && !isAdminUser(session.user)) {
+  if (session.token && session.user && !isAdminUser(session.user)) {
     clearAuthSession();
     return { token: '', user: null, forbidden: true };
   }
@@ -283,9 +288,9 @@ function App() {
       const byCategory = category === 'Все' || product.category === category;
       const byText =
         !needle ||
-        product.name.toLowerCase().includes(needle) ||
-        product.description.toLowerCase().includes(needle) ||
-        product.composition.toLowerCase().includes(needle);
+        toSearchText(product.name).includes(needle) ||
+        toSearchText(product.description).includes(needle) ||
+        toSearchText(product.composition).includes(needle);
 
       return byCategory && byText;
     });
@@ -584,12 +589,12 @@ function App() {
 
       setStatus(
         deleteResult.deleted
-          ? 'Фото удалено из Supabase и из продукта.'
+          ? 'Фото удалено.'
           : deleteResult.permissionDenied
-            ? 'Фото удалено из продукта. В Supabase не удалено: нет прав (для этого клиента нужна policy delete/select для роли anon, либо удаление через backend с service key).'
+            ? 'Фото удалено из продукта. Файл в хранилище не удалён из-за ограничений доступа.'
           : deleteResult.missing
-            ? 'Фото удалено из продукта. Файл в Supabase уже отсутствовал.'
-            : 'Фото удалено из продукта. Удаление из Supabase пропущено (внешний URL).'
+            ? 'Фото удалено из продукта. Файл уже отсутствовал в хранилище.'
+            : 'Фото удалено из продукта.'
       );
     } catch (deleteError) {
       setError(`Ошибка удаления фото: ${deleteError.message}`);
@@ -721,9 +726,9 @@ function App() {
           <div className="grain" />
           <main className="layout login-layout">
             <section className="panel login-panel">
-              <p className="eyebrow">Панель модератора</p>
+              <p className="eyebrow">Панель администратора</p>
               <h1>Проверяем вход...</h1>
-              <p className="subtle">Если сессия активна, модерка откроется автоматически.</p>
+              <p className="subtle">Если сессия активна, панель откроется автоматически.</p>
             </section>
           </main>
         </div>
@@ -745,15 +750,18 @@ function App() {
       <div className="grain" />
       <main className="layout">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">Панель модератора</p>
-            <h1>
-              {activeScreen === SCREEN_MENU ? 'Редактирование меню' : null}
-              {activeScreen === SCREEN_CREATE ? 'Добавление позиции' : null}
-              {activeScreen === SCREEN_CAKE_DESIGNS ? 'Торты с надписью' : null}
-              {activeScreen === SCREEN_ORDERS ? 'Редактирование заказов' : null}
-              {activeScreen === SCREEN_PROFILE ? 'Профиль' : null}
-            </h1>
+          <div className="brand-heading">
+            <img className="brand-logo" src={zaryadkaLogo} alt="Zaryadka Coffee" />
+            <div>
+              <p className="eyebrow">Панель администратора</p>
+              <h1>
+                {activeScreen === SCREEN_MENU ? 'Редактирование меню' : null}
+                {activeScreen === SCREEN_CREATE ? 'Добавление позиции' : null}
+                {activeScreen === SCREEN_CAKE_DESIGNS ? 'Торты с надписью' : null}
+                {activeScreen === SCREEN_ORDERS ? 'Редактирование заказов' : null}
+                {activeScreen === SCREEN_PROFILE ? 'Профиль' : null}
+              </h1>
+            </div>
           </div>
           <div className="topbar-actions">
             <span className="api-note">Пользователь: {accountLabel}</span>
@@ -899,7 +907,7 @@ function App() {
                           <div className="chip-line">
                             <span className="chip">{product.price} ₽</span>
                             <span className={`chip ${product.available ? 'ok' : 'off'}`}>
-                              {product.available ? 'В наличии' : 'Нет'}
+                              {product.available ? 'В наличии' : 'Нету'}
                             </span>
                           </div>
                         </button>
@@ -1043,7 +1051,7 @@ function App() {
                         </div>
 
                         <div className="full file-upload-block">
-                          <span>Добавить фото (файлы в Supabase)</span>
+                          <span>Добавить фото</span>
                           <input
                             ref={editPhotoInputRef}
                             className="file-input-hidden"
@@ -1065,7 +1073,7 @@ function App() {
                             Выбор файлов
                           </button>
                           <span className="subtle">
-                            Файлы загрузятся в Supabase при нажатии кнопки сохранения.
+                            Файлы загрузятся при нажатии кнопки сохранения.
                           </span>
                           {photoFiles.length === 0 ? (
                             <span className="subtle">Файлы пока не выбраны.</span>

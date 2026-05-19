@@ -1,13 +1,49 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAddressById, fetchOrders, updateOrder } from './api';
 import OrdersMobileScreen from './mobile/OrdersMobileScreen';
 
 const PHONE_MEDIA_QUERY = '(max-width: 700px)';
 const STATUS_OPTIONS = ['new', 'processing', 'shipped', 'delivered', 'cancelled'];
 const STATUS_FILTER_ALL = 'all';
+const STATUS_FILTER_OPTIONS = [
+  { value: STATUS_FILTER_ALL, label: 'Все статусы' },
+  { value: 'new', label: 'Новый', status: 'new' },
+  { value: 'processing', label: 'Готовится', status: 'processing' },
+  { value: 'shipped_delivery', label: 'В пути', status: 'shipped', deliveryMode: 'delivery' },
+  { value: 'shipped_pickup', label: 'Готов к выдаче', status: 'shipped', deliveryMode: 'pickup' },
+  { value: 'delivered_delivery', label: 'Доставлен', status: 'delivered', deliveryMode: 'delivery' },
+  { value: 'delivered_pickup', label: 'Выдан', status: 'delivered', deliveryMode: 'pickup' },
+  { value: 'cancelled', label: 'Отменён', status: 'cancelled' }
+];
 const USER_FILTER_ALL = 'all';
+const DELIVERY_FILTER_ALL = 'all';
+const DELIVERY_FILTER_OPTIONS = [
+  { value: DELIVERY_FILTER_ALL, label: 'Все заказы' },
+  { value: 'delivery', label: 'Доставка' },
+  { value: 'pickup', label: 'Самовывоз' }
+];
 const MOBILE_ORDER_LIST = 'list';
 const MOBILE_ORDER_EDITOR = 'editor';
+const STATUS_TITLES = {
+  new: 'Новый',
+  processing: 'Готовится',
+  shipped: 'В пути',
+  delivered: 'Доставлен',
+  cancelled: 'Отменён'
+};
+const PICKUP_STATUS_TITLES = {
+  ...STATUS_TITLES,
+  shipped: 'Готов к выдаче',
+  delivered: 'Выдан'
+};
+const PICKUP_ADDRESS = 'Проспект Мира, 95с1';
+const ALLOWED_TRANSITIONS = {
+  new: ['processing', 'cancelled'],
+  processing: ['shipped', 'cancelled'],
+  shipped: ['delivered'],
+  delivered: [],
+  cancelled: []
+};
 
 function normalizeOrder(order) {
   const normalizedStatus = order?.status === 'canceled' ? 'cancelled' : order?.status || 'new';
@@ -16,9 +52,12 @@ function normalizeOrder(order) {
     ...order,
     status: normalizedStatus,
     comment: order?.comment || '',
+    bonus_points_spent: Number(order?.bonus_points_spent || 0),
+    bonus_points_earned: Number(order?.bonus_points_earned || 0),
     items: Array.isArray(order?.items) ? order.items : [],
     user: order?.user || null,
-    address: order?.address || null
+    address: order?.address || null,
+    delivery_mode: order?.delivery_mode || 'delivery'
   };
 }
 
@@ -30,17 +69,77 @@ function formatDate(value) {
   return new Date(value).toLocaleString('ru-RU');
 }
 
-function shortId(value) {
-  if (!value) {
+function formatDateInputValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function currentWeekRange() {
+  const today = new Date();
+  const mondayOffset = (today.getDay() + 6) % 7;
+  const start = new Date(today);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(today.getDate() - mondayOffset);
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+
+  return {
+    from: formatDateInputValue(start),
+    to: formatDateInputValue(end)
+  };
+}
+
+function isPickupOrder(order) {
+  return order?.delivery_mode === 'pickup';
+}
+
+function statusTitle(value, order = null) {
+  const titles = isPickupOrder(order) ? PICKUP_STATUS_TITLES : STATUS_TITLES;
+  return titles[value] || value || '-';
+}
+
+function statusFilterOption(value) {
+  return STATUS_FILTER_OPTIONS.find((item) => item.value === value) || STATUS_FILTER_OPTIONS[0];
+}
+
+function editableStatusOptions(order) {
+  if (!order) {
+    return [];
+  }
+
+  return [order.status, ...(ALLOWED_TRANSITIONS[order.status] || [])];
+}
+
+function bonusEarnedPreview(order) {
+  if (!order) {
+    return 0;
+  }
+
+  if (Number(order.bonus_points_earned || 0) > 0) {
+    return Number(order.bonus_points_earned);
+  }
+
+  const subtotal = Number(order.subtotal_price ?? order.total_price ?? 0);
+  const spent = Number(order.bonus_points_spent || 0);
+  return Math.floor(Math.max(0, subtotal - spent) * 0.05);
+}
+
+function formatOrderNumber(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+
+  if (!digits) {
     return '-';
   }
 
-  const stringValue = String(value);
-  if (stringValue.length <= 12) {
-    return stringValue;
-  }
+  const tenDigits = digits.slice(-10).padStart(10, '0');
+  return `${tenDigits.slice(0, 5)}-${tenDigits.slice(5)}`;
+}
 
-  return `${stringValue.slice(0, 8)}...${stringValue.slice(-4)}`;
+function orderNumberLabel(order) {
+  return order?.formatted_order_number || formatOrderNumber(order?.order_number || order?.id);
 }
 
 function userKey(order) {
@@ -74,7 +173,15 @@ function userLabel(order) {
   return 'Неизвестный пользователь';
 }
 
-function formatAddress(address) {
+function customerPhone(order) {
+  return order?.customer_phone || order?.user?.phone || '-';
+}
+
+function formatAddress(address, order = null) {
+  if (isPickupOrder(order)) {
+    return PICKUP_ADDRESS;
+  }
+
   if (!address) {
     return '-';
   }
@@ -119,12 +226,17 @@ function readInitialPhoneLayout() {
 }
 
 function OrdersScreen() {
+  const initialDateRange = useMemo(() => currentWeekRange(), []);
   const [isPhoneLayout, setIsPhoneLayout] = useState(() => readInitialPhoneLayout());
   const [mobileOrderView, setMobileOrderView] = useState(MOBILE_ORDER_LIST);
   const [orders, setOrders] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const selectedIdRef = useRef(null);
   const [statusFilter, setStatusFilter] = useState(STATUS_FILTER_ALL);
   const [userFilter, setUserFilter] = useState(USER_FILTER_ALL);
+  const [deliveryModeFilter, setDeliveryModeFilter] = useState(DELIVERY_FILTER_ALL);
+  const [dateFrom, setDateFrom] = useState(initialDateRange.from);
+  const [dateTo, setDateTo] = useState(initialDateRange.to);
   const [draft, setDraft] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -135,8 +247,9 @@ function OrdersScreen() {
 
   const statusOptions = useMemo(() => {
     const unique = new Set(orders.map((order) => order.status).filter(Boolean));
-    STATUS_OPTIONS.forEach((item) => unique.add(item));
-    return [STATUS_FILTER_ALL, ...Array.from(unique)];
+    const extraStatuses = Array.from(unique).filter((item) => !STATUS_OPTIONS.includes(item));
+    const extraOptions = extraStatuses.map((status) => ({ value: status, label: status, status }));
+    return [...STATUS_FILTER_OPTIONS, ...extraOptions];
   }, [orders]);
 
   const userOptions = useMemo(() => {
@@ -153,12 +266,16 @@ function OrdersScreen() {
   }, [orders]);
 
   const filteredOrders = useMemo(() => {
+    const statusOption = statusFilterOption(statusFilter);
+
     return orders.filter((order) => {
-      const byStatus = statusFilter === STATUS_FILTER_ALL || order.status === statusFilter;
+      const byStatus = statusFilter === STATUS_FILTER_ALL || order.status === statusOption.status;
+      const byStatusDeliveryMode = !statusOption.deliveryMode || order.delivery_mode === statusOption.deliveryMode;
       const byUser = userFilter === USER_FILTER_ALL || userKey(order) === userFilter;
-      return byStatus && byUser;
+      const byDeliveryMode = deliveryModeFilter === DELIVERY_FILTER_ALL || order.delivery_mode === deliveryModeFilter;
+      return byStatus && byStatusDeliveryMode && byUser && byDeliveryMode;
     });
-  }, [orders, statusFilter, userFilter]);
+  }, [orders, statusFilter, userFilter, deliveryModeFilter]);
 
   const selectedOrder = useMemo(
     () => filteredOrders.find((order) => order.id === selectedId) || null,
@@ -172,19 +289,24 @@ function OrdersScreen() {
 
     return selectedOrder.status !== draft.status;
   }, [selectedOrder, draft]);
+  const editableStatuses = useMemo(() => editableStatusOptions(selectedOrder), [selectedOrder]);
 
-  async function loadOrders({ keepSelection = true } = {}) {
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  const loadOrders = useCallback(async ({ keepSelection = true } = {}) => {
     setLoading(true);
     setError('');
 
     try {
-      const ordersData = await fetchOrders();
+      const ordersData = await fetchOrders({ dateFrom, dateTo, deliveryMode: deliveryModeFilter });
       const normalized = ordersData.map((item) => normalizeOrder(item));
       setOrders(normalized);
 
       if (!keepSelection) {
         setSelectedId(null);
-      } else if (selectedId && !normalized.some((item) => item.id === selectedId)) {
+      } else if (selectedIdRef.current && !normalized.some((item) => item.id === selectedIdRef.current)) {
         setSelectedId(null);
       }
     } catch (requestError) {
@@ -192,11 +314,11 @@ function OrdersScreen() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [dateFrom, dateTo, deliveryModeFilter]);
 
   useEffect(() => {
     loadOrders({ keepSelection: false });
-  }, []);
+  }, [loadOrders]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -331,14 +453,23 @@ function OrdersScreen() {
     try {
       const payload = { status: draft.status };
 
-      await updateOrder(selectedOrder.id, payload);
+      if (payload.status === 'delivered') {
+        const ok = window.confirm(
+          `Отметить заказ доставленным и начислить ${bonusEarnedPreview(selectedOrder)} бонусов?`
+        );
+        if (!ok) {
+          return;
+        }
+      }
+
+      const updatedOrder = normalizeOrder(await updateOrder(selectedOrder.id, payload));
 
       setOrders((current) =>
         current.map((order) =>
           order.id === selectedOrder.id
             ? {
-                ...order,
-                status: payload.status
+                ...updatedOrder,
+                address: updatedOrder.address || order.address
               }
             : order
         )
@@ -361,8 +492,13 @@ function OrdersScreen() {
         loading={loading}
         statusFilter={statusFilter}
         userFilter={userFilter}
+        deliveryModeFilter={deliveryModeFilter}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
         statusOptions={statusOptions}
+        editableStatuses={editableStatuses}
         userOptions={userOptions}
+        deliveryFilterOptions={DELIVERY_FILTER_OPTIONS}
         orders={filteredOrders}
         selectedId={selectedId}
         selectedOrder={selectedOrder}
@@ -372,6 +508,9 @@ function OrdersScreen() {
         addressLoading={addressLoading}
         onStatusFilterChange={setStatusFilter}
         onUserFilterChange={setUserFilter}
+        onDeliveryModeFilterChange={setDeliveryModeFilter}
+        onDateFromChange={setDateFrom}
+        onDateToChange={setDateTo}
         onRefresh={() => loadOrders()}
         onSelectOrder={handleSelectOrder}
         onBackToList={() => setMobileOrderView(MOBILE_ORDER_LIST)}
@@ -384,10 +523,13 @@ function OrdersScreen() {
         }
         onSave={handleSave}
         formatDate={formatDate}
-        shortId={shortId}
+        orderNumberLabel={orderNumberLabel}
         userLabel={userLabel}
+        customerPhone={customerPhone}
         formatAddress={formatAddress}
-        statusFilterAll={STATUS_FILTER_ALL}
+        isPickupOrder={isPickupOrder}
+        statusTitle={statusTitle}
+        bonusEarnedPreview={bonusEarnedPreview}
       />
     );
   }
@@ -405,14 +547,20 @@ function OrdersScreen() {
           </button>
 
           <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            <option value={STATUS_FILTER_ALL}>Все статусы</option>
             {statusOptions
-              .filter((item) => item !== STATUS_FILTER_ALL)
               .map((item) => (
-                <option key={item} value={item}>
-                  {item}
+                <option key={item.value} value={item.value}>
+                  {item.label}
                 </option>
               ))}
+          </select>
+
+          <select value={deliveryModeFilter} onChange={(event) => setDeliveryModeFilter(event.target.value)}>
+            {DELIVERY_FILTER_OPTIONS.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
           </select>
 
           <select value={userFilter} onChange={(event) => setUserFilter(event.target.value)}>
@@ -422,6 +570,16 @@ function OrdersScreen() {
               </option>
             ))}
           </select>
+
+          <label className="inline-filter">
+            С
+            <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+          </label>
+
+          <label className="inline-filter">
+            По
+            <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+          </label>
         </div>
 
         <div className="list-scroll">
@@ -435,14 +593,14 @@ function OrdersScreen() {
               onClick={() => handleSelectOrder(order.id)}
             >
               <div>
-                <strong>Заказ #{shortId(order.id)}</strong>
+                <strong>Заказ {orderNumberLabel(order)}</strong>
                 <p>{userLabel(order)}</p>
                 <p>{formatDate(order.created_at)}</p>
               </div>
               <div className="chip-line">
                 <span className="chip">{order.total_price} ₽</span>
                 <span className="chip">{order.items_count} шт.</span>
-                <span className="chip">{order.status}</span>
+                <span className="chip">{statusTitle(order.status, order)}</span>
               </div>
             </button>
           ))}
@@ -455,7 +613,7 @@ function OrdersScreen() {
           ) : (
             <>
               <div className="editor-head">
-                <h2>Заказ #{shortId(selectedOrder.id)}</h2>
+                <h2>Заказ {orderNumberLabel(selectedOrder)}</h2>
                 <span>{formatDate(selectedOrder.created_at)}</span>
               </div>
 
@@ -464,14 +622,21 @@ function OrdersScreen() {
                   <strong>Пользователь:</strong> {userLabel(selectedOrder)}
                 </p>
                 <p>
+                  <strong>Телефон:</strong> {customerPhone(selectedOrder)}
+                </p>
+                <p>
                   <strong>Сумма:</strong> {selectedOrder.total_price} ₽
+                </p>
+                <p>
+                  <strong>Бонусы:</strong> списано {selectedOrder.bonus_points_spent} / начислится{' '}
+                  {bonusEarnedPreview(selectedOrder)}
                 </p>
                 <p>
                   <strong>Позиции:</strong> {selectedOrder.items_count}
                 </p>
                 <p>
-                  <strong>Адрес:</strong>{' '}
-                  {addressLoading ? 'Загрузка адреса...' : formatAddress(selectedOrder.address)}
+                  <strong>{isPickupOrder(selectedOrder) ? 'Самовывоз:' : 'Адрес:'}</strong>{' '}
+                  {addressLoading ? 'Загрузка адреса...' : formatAddress(selectedOrder.address, selectedOrder)}
                 </p>
                 <p>
                   <strong>Комментарий:</strong> {selectedOrder.comment || '-'}
@@ -485,11 +650,10 @@ function OrdersScreen() {
                     value={draft.status}
                     onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}
                   >
-                    {statusOptions
-                      .filter((item) => item !== STATUS_FILTER_ALL)
+                    {editableStatuses
                       .map((option) => (
                         <option key={option} value={option}>
-                          {option}
+                          {statusTitle(option, selectedOrder)}
                         </option>
                       ))}
                   </select>
@@ -499,6 +663,18 @@ function OrdersScreen() {
 
               <div className="order-items">
                 <h3>Состав заказа</h3>
+                <div className="order-meta order-totals">
+                  <p>
+                    <strong>Товары:</strong> {selectedOrder.subtotal_price ?? selectedOrder.total_price} ₽
+                  </p>
+                  <p>
+                    <strong>{isPickupOrder(selectedOrder) ? 'Самовывоз:' : 'Доставка:'}</strong>{' '}
+                    {isPickupOrder(selectedOrder) ? 0 : selectedOrder.delivery_fee ?? 0} ₽
+                  </p>
+                  <p>
+                    <strong>Списано бонусов:</strong> {selectedOrder.bonus_points_spent}
+                  </p>
+                </div>
                 {selectedOrder.items.length === 0 ? <p className="subtle">Нет позиций</p> : null}
                 {selectedOrder.items.map((item) => (
                   <div key={item.id} className="order-item-row">

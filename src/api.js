@@ -4,6 +4,8 @@ const AUTH_USER_KEY = 'moderator_cafe_auth_user';
 const AUTH_SESSION_HINT_KEY = 'moderator_cafe_has_session';
 const addressCache = new Map();
 const pendingAddressRequests = new Map();
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+let csrfPromise = null;
 
 const endpoint = (path) => `${API_BASE_URL}${path}`;
 
@@ -31,6 +33,7 @@ function markAuthSession() {
     return;
   }
 
+  window.localStorage.setItem(AUTH_SESSION_HINT_KEY, '1');
   window.sessionStorage.setItem(AUTH_SESSION_HINT_KEY, '1');
 }
 
@@ -39,7 +42,50 @@ function hasAuthSessionHint() {
     return false;
   }
 
-  return window.sessionStorage.getItem(AUTH_SESSION_HINT_KEY) === '1';
+  return (
+    window.localStorage.getItem(AUTH_SESSION_HINT_KEY) === '1' ||
+    window.sessionStorage.getItem(AUTH_SESSION_HINT_KEY) === '1'
+  );
+}
+
+function getCookie(name) {
+  if (typeof document === 'undefined') {
+    return '';
+  }
+
+  return document.cookie
+    .split('; ')
+    .find((row) => row.startsWith(`${name}=`))
+    ?.split('=')
+    .slice(1)
+    .join('=') || '';
+}
+
+function shouldUseCsrf(path, method) {
+  if (SAFE_METHODS.has(method)) {
+    return false;
+  }
+
+  return path.startsWith('/api/moderator') || path.startsWith('/api/admin');
+}
+
+async function ensureCsrfToken() {
+  if (!csrfPromise) {
+    csrfPromise = fetch(endpoint('/sanctum/csrf-cookie'), {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json'
+      }
+    }).finally(() => {
+      csrfPromise = null;
+    });
+  }
+
+  const response = await csrfPromise;
+  if (!response.ok) {
+    throw new Error(`Не удалось получить CSRF-токен: HTTP ${response.status}`);
+  }
 }
 
 export function clearAuthSession() {
@@ -53,9 +99,17 @@ export function getStoredAuthSession() {
 
 async function request(path, options = {}) {
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const method = String(options.method || 'GET').toUpperCase();
+
+  if (shouldUseCsrf(path, method)) {
+    await ensureCsrfToken();
+  }
+
+  const csrfToken = shouldUseCsrf(path, method) ? decodeURIComponent(getCookie('XSRF-TOKEN')) : '';
   const headers = {
     Accept: 'application/json',
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
     ...(options.headers || {})
   };
 
@@ -117,7 +171,16 @@ export async function fetchCurrentUser() {
 }
 
 export async function fetchProducts() {
-  const body = await request('/api/products');
+  let body;
+  try {
+    body = await request('/api/admin/products');
+  } catch (error) {
+    if (error?.status && ![404, 405].includes(error.status)) {
+      throw error;
+    }
+    body = await request('/api/products');
+  }
+
   const items = body?.data || [];
 
   return items.map((product) => {
@@ -195,7 +258,7 @@ export async function createProduct(payload) {
   return body?.data || body;
 }
 
-export async function fetchOrders() {
+export async function fetchOrders(filters = {}) {
   const pickOrders = (payload) => {
     if (Array.isArray(payload)) {
       return payload;
@@ -208,16 +271,32 @@ export async function fetchOrders() {
     }
     return [];
   };
+  const params = new URLSearchParams();
+
+  if (filters.dateFrom) {
+    params.set('date_from', filters.dateFrom);
+  }
+  if (filters.dateTo) {
+    params.set('date_to', filters.dateTo);
+  }
+  if (filters.deliveryMode && filters.deliveryMode !== 'all') {
+    params.set('delivery_mode', filters.deliveryMode);
+  }
+  params.set('per_page', '100');
+
+  const queryString = params.toString();
+  const adminPath = `/api/admin/orders${queryString ? `?${queryString}` : ''}`;
+  const fallbackPath = `/api/orders${queryString ? `?${queryString}` : ''}`;
 
   try {
-    const body = await request('/api/admin/orders');
+    const body = await request(adminPath);
     return pickOrders(body);
   } catch (error) {
     // Fallback for legacy non-admin route.
     if (error?.status && ![404, 405].includes(error.status)) {
       throw error;
     }
-    const body = await request('/api/orders');
+    const body = await request(fallbackPath);
     return pickOrders(body);
   }
 }
@@ -299,10 +378,12 @@ export async function deleteProduct(productId) {
 export async function updateOrder(orderId, payload) {
   const statusPayload = { status: payload?.status };
 
-  return request(`/api/admin/orders/${orderId}/status`, {
+  const body = await request(`/api/admin/orders/${orderId}/status`, {
     method: 'PATCH',
     body: JSON.stringify(statusPayload)
   });
+
+  return body?.data || body;
 }
 
 export { API_BASE_URL };

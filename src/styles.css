@@ -63,6 +63,14 @@ body {
   padding: 22px;
 }
 
+.login-logo {
+  display: block;
+  width: 132px;
+  height: 132px;
+  object-fit: contain;
+  margin: 0 auto 16px;
+}
+
 .login-form {
   display: grid;
   gap: 10px;
@@ -127,6 +135,20 @@ body {
   margin-bottom: 16px;
 }
 
+.brand-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.brand-logo {
+  width: 58px;
+  height: 58px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
 .topbar h1 {
   margin: 0;
   font-size: clamp(1.4rem, 2.5vw, 2rem);
@@ -176,6 +198,9 @@ body {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
   gap: 16px;
+  align-items: start;
+  height: calc(100vh - 170px);
+  min-height: 520px;
 }
 
 .create-content {
@@ -243,7 +268,16 @@ body {
 .list-panel {
   display: flex;
   flex-direction: column;
-  min-height: 70vh;
+  position: sticky;
+  top: 16px;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.editor-panel {
+  max-height: 100%;
+  overflow: auto;
 }
 
 .controls {
@@ -253,7 +287,17 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.inline-filter {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
 .list-scroll {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 10px;
   display: grid;
@@ -268,6 +312,8 @@ body {
   text-align: left;
   cursor: pointer;
   transition: transform 140ms ease, border-color 140ms ease;
+  display: grid;
+  gap: 8px;
 }
 
 .product-card:hover {
@@ -368,6 +414,12 @@ body {
 
 .order-meta p {
   margin: 0;
+}
+
+.order-totals {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .form-grid {
@@ -737,6 +789,30 @@ button:disabled {
   color: var(--muted);
 }
 
+.weight-options-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.weight-options-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.weight-options-list {
+  display: grid;
+  gap: 10px;
+}
+
+.weight-option-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
 .cake-design-photo-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -795,10 +871,20 @@ button:disabled {
 @media (max-width: 980px) {
   .content {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
   }
 
   .list-panel {
+    position: static;
     min-height: 320px;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .editor-panel {
+    max-height: none;
+    overflow: visible;
   }
 }
 
@@ -810,6 +896,15 @@ button:disabled {
   .topbar {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .brand-heading {
+    align-items: flex-start;
+  }
+
+  .brand-logo {
+    width: 48px;
+    height: 48px;
   }
 
   .top-menu {
@@ -831,6 +926,12 @@ button:disabled {
 
   .cake-design-photo-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .weight-options-head,
+  .weight-option-row {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .photo-open-btn {

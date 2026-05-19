@@ -5,8 +5,13 @@ function OrdersMobileScreen({
   loading,
   statusFilter,
   userFilter,
+  deliveryModeFilter,
+  dateFrom,
+  dateTo,
   statusOptions,
+  editableStatuses,
   userOptions,
+  deliveryFilterOptions,
   orders,
   selectedId,
   selectedOrder,
@@ -16,6 +21,9 @@ function OrdersMobileScreen({
   addressLoading,
   onStatusFilterChange,
   onUserFilterChange,
+  onDeliveryModeFilterChange,
+  onDateFromChange,
+  onDateToChange,
   onRefresh,
   onSelectOrder,
   onBackToList,
@@ -23,10 +31,13 @@ function OrdersMobileScreen({
   onReset,
   onSave,
   formatDate,
-  shortId,
+  orderNumberLabel,
   userLabel,
+  customerPhone,
   formatAddress,
-  statusFilterAll
+  isPickupOrder,
+  statusTitle,
+  bonusEarnedPreview,
 }) {
   function orderItemName(item) {
     return item?.dessert?.name || `Dessert #${item.dessert_id}`;
@@ -63,14 +74,20 @@ function OrdersMobileScreen({
               </button>
 
               <select value={statusFilter} onChange={(event) => onStatusFilterChange(event.target.value)}>
-                <option value={statusFilterAll}>Все статусы</option>
                 {statusOptions
-                  .filter((item) => item !== statusFilterAll)
                   .map((item) => (
-                    <option key={item} value={item}>
-                      {item}
+                    <option key={item.value} value={item.value}>
+                      {item.label}
                     </option>
                   ))}
+              </select>
+
+              <select value={deliveryModeFilter} onChange={(event) => onDeliveryModeFilterChange(event.target.value)}>
+                {deliveryFilterOptions.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
               </select>
 
               <select value={userFilter} onChange={(event) => onUserFilterChange(event.target.value)}>
@@ -80,6 +97,16 @@ function OrdersMobileScreen({
                   </option>
                 ))}
               </select>
+
+              <label className="inline-filter">
+                С
+                <input type="date" value={dateFrom} onChange={(event) => onDateFromChange(event.target.value)} />
+              </label>
+
+              <label className="inline-filter">
+                По
+                <input type="date" value={dateTo} onChange={(event) => onDateToChange(event.target.value)} />
+              </label>
             </div>
 
             <div className="list-scroll mobile-list-scroll">
@@ -93,14 +120,14 @@ function OrdersMobileScreen({
                   onClick={() => onSelectOrder(order.id)}
                 >
                   <div>
-                    <strong>Заказ #{shortId(order.id)}</strong>
+                    <strong>Заказ {orderNumberLabel(order)}</strong>
                     <p>{userLabel(order)}</p>
                     <p>{formatDate(order.created_at)}</p>
                   </div>
                   <div className="chip-line">
                     <span className="chip">{order.total_price} ₽</span>
                     <span className="chip">{order.items_count} шт.</span>
-                    <span className="chip">{order.status}</span>
+                    <span className="chip">{statusTitle(order.status, order)}</span>
                   </div>
                 </button>
               ))}
@@ -122,7 +149,7 @@ function OrdersMobileScreen({
             <button className="ghost mobile-back-btn" onClick={onBackToList} disabled={saving}>
               К списку
             </button>
-            {selectedOrder ? <span className="mobile-editor-id">Заказ #{shortId(selectedOrder.id)}</span> : null}
+            {selectedOrder ? <span className="mobile-editor-id">Заказ {orderNumberLabel(selectedOrder)}</span> : null}
           </div>
 
           {!draft || !selectedOrder ? (
@@ -130,7 +157,7 @@ function OrdersMobileScreen({
           ) : (
             <>
               <div className="editor-head mobile-editor-head">
-                <h2>Заказ #{shortId(selectedOrder.id)}</h2>
+                <h2>Заказ {orderNumberLabel(selectedOrder)}</h2>
                 <span>{formatDate(selectedOrder.created_at)}</span>
               </div>
 
@@ -139,13 +166,21 @@ function OrdersMobileScreen({
                   <strong>Пользователь:</strong> {userLabel(selectedOrder)}
                 </p>
                 <p>
+                  <strong>Телефон:</strong> {customerPhone(selectedOrder)}
+                </p>
+                <p>
                   <strong>Сумма:</strong> {selectedOrder.total_price} ₽
+                </p>
+                <p>
+                  <strong>Бонусы:</strong> списано {selectedOrder.bonus_points_spent || 0} / начислится{' '}
+                  {bonusEarnedPreview(selectedOrder)}
                 </p>
                 <p>
                   <strong>Позиции:</strong> {selectedOrder.items_count}
                 </p>
                 <p>
-                  <strong>Адрес:</strong> {addressLoading ? 'Загрузка адреса...' : formatAddress(selectedOrder.address)}
+                  <strong>{isPickupOrder(selectedOrder) ? 'Самовывоз:' : 'Адрес:'}</strong>{' '}
+                  {addressLoading ? 'Загрузка адреса...' : formatAddress(selectedOrder.address, selectedOrder)}
                 </p>
                 <p>
                   <strong>Комментарий:</strong> {selectedOrder.comment || '-'}
@@ -156,11 +191,10 @@ function OrdersMobileScreen({
                 <label>
                   Статус
                   <select value={draft.status} onChange={(event) => onDraftStatusChange(event.target.value)}>
-                    {statusOptions
-                      .filter((item) => item !== statusFilterAll)
+                    {editableStatuses
                       .map((option) => (
                         <option key={option} value={option}>
-                          {option}
+                          {statusTitle(option, selectedOrder)}
                         </option>
                       ))}
                   </select>
@@ -169,6 +203,18 @@ function OrdersMobileScreen({
 
               <div className="order-items">
                 <h3>Состав заказа</h3>
+                <div className="order-meta order-totals">
+                  <p>
+                    <strong>Товары:</strong> {selectedOrder.subtotal_price ?? selectedOrder.total_price} ₽
+                  </p>
+                  <p>
+                    <strong>{isPickupOrder(selectedOrder) ? 'Самовывоз:' : 'Доставка:'}</strong>{' '}
+                    {isPickupOrder(selectedOrder) ? 0 : selectedOrder.delivery_fee ?? 0} ₽
+                  </p>
+                  <p>
+                    <strong>Списано бонусов:</strong> {selectedOrder.bonus_points_spent || 0}
+                  </p>
+                </div>
                 {selectedOrder.items.length === 0 ? <p className="subtle">Нет позиций</p> : null}
                 {selectedOrder.items.map((item) => (
                   <div key={item.id} className="order-item-row">

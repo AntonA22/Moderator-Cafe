@@ -92,7 +92,7 @@ function MenuMobileScreen({
                     <div className="chip-line">
                       <span className="chip">{product.price} ₽</span>
                       <span className={`chip ${product.available ? 'ok' : 'off'}`}>
-                        {product.available ? 'В наличии' : 'Нет'}
+                        {product.available ? 'В наличии' : 'Нету'}
                       </span>
                     </div>
                   </button>
@@ -232,7 +232,7 @@ function MenuMobileScreen({
                 </div>
 
                 <div className="full file-upload-block">
-                  <span>Добавить фото (файлы в Supabase)</span>
+                  <span>Добавить фото</span>
                   <input
                     ref={photoInputRef}
                     className="file-input-hidden"
@@ -253,7 +253,7 @@ function MenuMobileScreen({
                   >
                     Выбор файлов
                   </button>
-                  <span className="subtle">Файлы загрузятся в Supabase при нажатии кнопки сохранения.</span>
+                  <span className="subtle">Файлы загрузятся при нажатии кнопки сохранения.</span>
                   {photoFilesCount === 0 ? (
                     <span className="subtle">Файлы пока не выбраны.</span>
                   ) : (

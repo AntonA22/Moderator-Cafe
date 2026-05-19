@@ -106,7 +106,7 @@ function CreateProductScreen({
             </label>
 
             <div className="full file-upload-block">
-              <span>Добавить фото (файлы в Supabase)</span>
+              <span>Добавить фото</span>
               <input
                 ref={photoInputRef}
                 className="file-input-hidden"
