@@ -785,7 +785,7 @@ button:disabled {
 
 .cake-image-editor {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   color: var(--muted);
 }
 
@@ -815,18 +815,20 @@ button:disabled {
 
 .cake-design-photo-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, 112px);
   gap: 8px;
+  align-items: start;
 }
 
 .cake-design-photo-item {
   position: relative;
+  width: 112px;
 }
 
 .cake-design-preview {
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  border-radius: 14px;
+  width: 112px;
+  height: 84px;
+  border-radius: 10px;
   border: 1px solid #cfe6d7;
   object-fit: cover;
   background: #fff;
@@ -835,6 +837,8 @@ button:disabled {
 .cake-design-preview-empty {
   display: grid;
   place-items: center;
+  width: 160px;
+  height: 96px;
   color: var(--muted);
   background: #f4fcf7;
 }

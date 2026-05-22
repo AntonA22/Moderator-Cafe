@@ -249,6 +249,15 @@ export async function deleteCakeDesign(designId) {
   });
 }
 
+export async function deleteStoragePhoto(photoUrl) {
+  const body = await request('/api/admin/storage/photo', {
+    method: 'DELETE',
+    body: JSON.stringify({ url: photoUrl })
+  });
+
+  return body?.data || body;
+}
+
 export async function createProduct(payload) {
   const body = await request('/api/admin/products', {
     method: 'POST',

@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createCakeDesign,
   deleteCakeDesign,
+  deleteStoragePhoto,
   fetchCakeDesigns,
   updateCakeDesign
 } from './api';
-import { deleteCakeDesignPhotoByUrl, uploadCakeDesignPhoto } from './supabase';
+import { uploadCakeDesignPhoto } from './supabase';
 
 const NUMBER_FIELDS = ['price', 'weight_grams', 'calories_per_100g', 'sort_order'];
 const FIXED_WEIGHT_OPTIONS = [
@@ -632,7 +633,7 @@ function CakeDesignsScreen() {
       const keptPhotos = normalizePhotos(nextDesign.photos);
       const removedPhotos = oldPhotos.filter((photo) => !draftPhotos.includes(photo) && !keptPhotos.includes(photo));
       for (const photo of removedPhotos) {
-        await deleteCakeDesignPhotoByUrl(photo);
+        await deleteStoragePhoto(photo);
       }
 
       setDesigns((current) => current.map((item) => (item.id === nextDesign.id ? nextDesign : item)));
@@ -686,9 +687,6 @@ function CakeDesignsScreen() {
     setStatus('');
 
     try {
-      for (const photo of normalizePhotos(draft.photos)) {
-        await deleteCakeDesignPhotoByUrl(photo);
-      }
       await deleteCakeDesign(draft.id);
       setDesigns((current) => {
         const remaining = current.filter((item) => item.id !== draft.id);
